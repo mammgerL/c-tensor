@@ -1,0 +1,25 @@
+# 编译产物
+train
+eval
+
+#数据
+data/
+*.csv
+
+# 模型文件
+*.bin
+
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 调试文件
+*.dSYM/
+*.out
