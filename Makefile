@@ -24,7 +24,7 @@ else
 endif
 
 # 目标文件
-TARGETS := train eval
+TARGETS := train eval web
 
 # 默认目标
 all: $(TARGETS)
@@ -36,6 +36,10 @@ train: train.c tensor.h
 # 编译评估程序
 eval: eval.c tensor.h
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
+# 编译 Web 服务器
+web: web_server.c api_handlers.c tensor.h
+	$(CC) $(CFLAGS) -o $@ web_server.c api_handlers.c $(LDFLAGS)
 
 # OpenMP 版本编译 (macOS 上使用 libomp)
 openmp: clean
@@ -61,6 +65,10 @@ train-run: train data
 eval-run: eval data
 	./eval
 
+# 启动 Web 服务
+web-run: web data
+	./web
+
 # 清理编译产物
 clean:
 	rm -f $(TARGETS)
@@ -79,14 +87,16 @@ help:
 	@echo "C-Tensor Makefile 使用说明"
 	@echo ""
 	@echo "目标:"
-	@echo "  all        - 编译 train 和 eval (默认，macOS 用 Accelerate)"
+	@echo "  all        - 编译 train、eval 和 web (默认，macOS 用 Accelerate)"
 	@echo "  openmp     - 使用 OpenMP 编译 (macOS 需 brew install libomp)"
 	@echo "  train      - 仅编译训练程序"
 	@echo "  eval       - 仅编译评估程序"
+	@echo "  web        - 仅编译 Web 服务器"
 	@echo "  data       - 生成 MNIST CSV 数据集"
 	@echo "  run        - 完整流程: 数据准备 + 训练 + 评估"
 	@echo "  train-run  - 编译并运行训练"
 	@echo "  eval-run   - 编译并运行评估"
+	@echo "  web-run    - 编译并启动 Web 服务"
 	@echo "  debug      - Debug 编译 (带调试符号)"
 	@echo "  clean      - 清理编译产物"
 	@echo "  cleanall   - 清理所有生成文件"
@@ -97,4 +107,4 @@ help:
 	@echo "编译选项: $(CFLAGS)"
 	@echo "链接选项: $(LDFLAGS)"
 
-.PHONY: all openmp run data train-run eval-run  clean cleanall debug help
+.PHONY: all openmp run data train-run eval-run web-run clean cleanall debug help

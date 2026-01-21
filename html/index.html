@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MNIST 神经网络可视化</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+        }
+        .panels {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .panels-full {
+            grid-column: 1 / -1;
+        }
+        .panel {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .panel h2 {
+            margin-top: 0;
+            color: #555;
+            font-size: 18px;
+            border-bottom: 2px solid #4a90e2;
+            padding-bottom: 10px;
+        }
+        .controls {
+            margin-bottom: 20px;
+        }
+        .controls label {
+            margin-right: 15px;
+            font-weight: 500;
+        }
+        .controls input, .controls select {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .controls button {
+            padding: 8px 20px;
+            background: #4a90e2;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-left: 10px;
+        }
+        .controls button:hover {
+            background: #357abd;
+        }
+        .image-display {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 20px 0;
+        }
+        .image-info {
+            text-align: center;
+            margin-bottom: 15px;
+        }
+        .image-info .label {
+            font-size: 24px;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        .image-info .correct {
+            color: #4CAF50;
+        }
+        .image-info .incorrect {
+            color: #f44336;
+        }
+        .confidence {
+            font-size: 18px;
+            color: #666;
+        }
+        .network-diagram {
+            height: 400px;
+            margin-top: 20px;
+        }
+        .activations {
+            margin-top: 20px;
+        }
+        .activation-grid {
+            display: grid;
+            grid-template-columns: repeat(16, 1fr);
+            gap: 2px;
+            margin-top: 10px;
+        }
+        .activation-cell {
+            aspect-ratio: 1;
+            border-radius: 2px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 8px;
+            color: #333;
+            background: #eee;
+            transition: background 0.3s;
+        }
+        .probabilities {
+            margin-top: 20px;
+        }
+        .prob-bar {
+            display: flex;
+            align-items: center;
+            margin: 8px 0;
+        }
+        .prob-label {
+            width: 30px;
+            font-weight: bold;
+        }
+        .prob-bar-bg {
+            flex: 1;
+            height: 24px;
+            background: #eee;
+            border-radius: 4px;
+            overflow: hidden;
+            margin: 0 10px;
+        }
+        .prob-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #4a90e2, #357abd);
+            transition: width 0.3s;
+        }
+        .prob-value {
+            width: 60px;
+            text-align: right;
+            color: #666;
+        }
+        .stats {
+            margin-top: 20px;
+        }
+        .stat-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid #eee;
+        }
+        .stat-value {
+            font-weight: bold;
+            color: #4a90e2;
+        }
+        .error-message {
+            color: #f44336;
+            text-align: center;
+            padding: 20px;
+            font-size: 16px;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+        #network-svg {
+            width: 100%;
+            height: 100%;
+        }
+        .node-circle {
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .node-circle:hover {
+            stroke-width: 3;
+        }
+        .link-line {
+            stroke-opacity: 0.3;
+        }
+        .hidden-label {
+            font-size: 10px;
+            fill: #666;
+        }
+        .output-label {
+            font-size: 14px;
+            font-weight: bold;
+            fill: #333;
+        }
+        .activation-tooltip {
+            position: absolute;
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            pointer-events: none;
+            z-index: 100;
+            display: none;
+        }
+        .computation-panel {
+            margin-top: 20px;
+        }
+        .step-card {
+            background: #f9f9f9;
+            border-left: 4px solid #4a90e2;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 4px;
+        }
+        .step-title {
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 10px;
+        }
+        .step-operation {
+            color: #4a90e2;
+            font-size: 14px;
+            margin-bottom: 8px;
+        }
+        .matrix-display {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            margin-top: 10px;
+        }
+        .matrix-item {
+            flex: 1;
+            min-width: 200px;
+            background: white;
+            padding: 10px;
+            border-radius: 4px;
+            border: 1px solid #e0e0e0;
+        }
+        .matrix-label {
+            font-weight: 600;
+            color: #555;
+            margin-bottom: 5px;
+        }
+        .matrix-shape {
+            font-size: 12px;
+            color: #888;
+            margin-bottom: 8px;
+        }
+        .matrix-values {
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+            color: #333;
+            background: #f5f5f5;
+            padding: 8px;
+            border-radius: 3px;
+            max-height: 150px;
+            overflow-y: auto;
+        }
+        .computation-arrow {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            color: #4a90e2;
+            margin: 10px 0;
+        }
+        .play-button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+        .play-button:hover {
+            background: #45a049;
+        }
+        .step-active {
+            background: #e3f2fd;
+            border-left-color: #2196F3;
+        }
+        .step-completed {
+            background: #f0f0f0;
+            border-left-color: #888;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>MNIST 神经网络可视化 (784 → 256 → 10)</h1>
+
+        <div class="panels">
+            <div class="panel">
+                <h2>样本选择</h2>
+                <div class="controls">
+                    <label>索引: <input type="number" id="indexInput" value="0" min="0" max="9999"></label>
+                    <label>过滤: 
+                        <select id="filterSelect">
+                            <option value="all">全部</option>
+                            <option value="correct">正确</option>
+                            <option value="incorrect">错误</option>
+                        </select>
+                    </label>
+                    <button id="prevBtn">← 上一个</button>
+                    <button id="nextBtn">下一个 →</button>
+                    <button id="randomBtn">随机</button>
+                </div>
+
+                <div class="image-display">
+                    <canvas id="imageCanvas" width="224" height="224"></canvas>
+                </div>
+
+                <div class="image-info">
+                    <div id="labelDisplay"></div>
+                    <div class="confidence" id="confidenceDisplay"></div>
+                </div>
+
+                <div class="network-diagram">
+                    <svg id="network-svg"></svg>
+                    <div class="activation-tooltip" id="tooltip"></div>
+                </div>
+            </div>
+
+            <div class="panel">
+                <h2>输出概率</h2>
+                <div class="probabilities" id="probabilities"></div>
+
+                <h2 style="margin-top: 30px;">隐藏层激活</h2>
+                <div class="activations">
+                    <div class="activation-grid" id="hiddenActivations"></div>
+                </div>
+
+                <h2 style="margin-top: 30px;">整体评估</h2>
+                <div class="stats" id="stats"></div>
+            </div>
+        </div>
+
+        <div class="panel panels-full">
+            <h2>矩阵计算演示</h2>
+            <button class="play-button" id="playComputation">▶ 播放计算过程</button>
+            <div class="computation-panel" id="computationPanel"></div>
+        </div>
+    </div>
+
+    <script>
+        let architecture = null;
+        let currentIndex = 0;
+        let currentData = null;
+        let filteredIndices = [];
+        let currentFilter = 'all';
+
+        async function fetchJSON(url) {
+            try {
+                const response = await fetch(url);
+                if (!response.ok) throw new Error(response.statusText);
+                return await response.json();
+            } catch (error) {
+                console.error('Fetch error:', error);
+                throw error;
+            }
+        }
+
+        async function init() {
+            try {
+                architecture = await fetchJSON('/api/architecture');
+                await loadStats();
+                await loadSample(0);
+                setupEventListeners();
+            } catch (error) {
+                document.querySelector('.container').innerHTML =
+                    `<div class="error-message">加载失败: ${error.message}<br>请确保服务器已启动且数据文件存在</div>`;
+            }
+        }
+
+        async function loadStats() {
+            try {
+                const stats = await fetchJSON('/api/eval');
+                displayStats(stats);
+            } catch (error) {
+                console.error('Stats error:', error);
+            }
+        }
+
+        function displayStats(stats) {
+            const container = document.getElementById('stats');
+            container.innerHTML = `
+                <div class="stat-item">
+                    <span>总样本数</span>
+                    <span class="stat-value">${stats.total}</span>
+                </div>
+                <div class="stat-item">
+                    <span>正确数</span>
+                    <span class="stat-value" style="color: #4CAF50">${stats.correct}</span>
+                </div>
+                <div class="stat-item">
+                    <span>错误数</span>
+                    <span class="stat-value" style="color: #f44336">${stats.incorrect}</span>
+                </div>
+                <div class="stat-item">
+                    <span>准确率</span>
+                    <span class="stat-value">${stats.accuracy.toFixed(2)}%</span>
+                </div>
+            `;
+        }
+
+        async function loadSample(index) {
+            try {
+                currentData = await fetchJSON(`/api/predict?index=${index}`);
+                currentIndex = index;
+                displaySample(currentData);
+            } catch (error) {
+                console.error('Sample error:', error);
+            }
+        }
+
+        function displaySample(data) {
+            drawImage(data.pixels);
+            displayLabels(data);
+            displayProbabilities(data.output);
+            displayHiddenActivations(data.hidden);
+            drawNetwork(data);
+            displayComputation(data.computation);
+        }
+
+        function drawImage(pixels) {
+            const canvas = document.getElementById('imageCanvas');
+            const ctx = canvas.getContext('2d');
+            const size = 28;
+            const scale = 8;
+
+            ctx.fillStyle = 'white';
+            ctx.fillRect(0, 0, 224, 224);
+
+            const imageData = ctx.createImageData(size, size);
+            for (let i = 0; i < pixels.length; i++) {
+                // 像素值范围是 [-1, 1]，需要映射到 [0, 255]
+                const normalized = (pixels[i] + 1) / 2;
+                const pixel = Math.max(0, Math.min(255, Math.round(normalized * 255)));
+                imageData.data[i * 4] = pixel;
+                imageData.data[i * 4 + 1] = pixel;
+                imageData.data[i * 4 + 2] = pixel;
+                imageData.data[i * 4 + 3] = 255;
+            }
+
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = size;
+            tempCanvas.height = size;
+            tempCanvas.getContext('2d').putImageData(imageData, 0, 0);
+
+            ctx.imageSmoothingEnabled = false;
+            ctx.drawImage(tempCanvas, 8, 8, size * scale, size * scale);
+        }
+
+        function displayLabels(data) {
+            const labelDiv = document.getElementById('labelDisplay');
+            const confDiv = document.getElementById('confidenceDisplay');
+
+            const isCorrect = data.correct;
+            labelDiv.innerHTML = `
+                <span>真实标签: <strong>${data.true_label}</strong></span>
+                <span style="margin: 0 20px;">|</span>
+                <span>预测标签: <strong>${data.predicted}</strong></span>
+                <br>
+                <span class="label ${isCorrect ? 'correct' : 'incorrect'}">
+                    ${isCorrect ? '✓ 正确' : '✗ 错误'}
+                </span>
+            `;
+            confDiv.textContent = `置信度: ${(data.confidence * 100).toFixed(2)}%`;
+        }
+
+        function displayProbabilities(output) {
+            const container = document.getElementById('probabilities');
+            const probs = output.map((v, i) => ({ digit: i, prob: Math.exp(v) }));
+            const sum = probs.reduce((a, b) => a + b.prob, 0);
+            probs.forEach(p => p.prob = p.prob / sum);
+            probs.sort((a, b) => b.prob - a.prob);
+
+            container.innerHTML = probs.map(p => `
+                <div class="prob-bar">
+                    <span class="prob-label">${p.digit}</span>
+                    <div class="prob-bar-bg">
+                        <div class="prob-bar-fill" style="width: ${p.prob * 100}%"></div>
+                    </div>
+                    <span class="prob-value">${(p.prob * 100).toFixed(1)}%</span>
+                </div>
+            `).join('');
+        }
+
+        function displayHiddenActivations(hidden) {
+            const container = document.getElementById('hiddenActivations');
+            const maxVal = Math.max(...hidden.map(Math.abs));
+
+            container.innerHTML = hidden.map((v, i) => {
+                const normalized = Math.abs(v) / maxVal;
+                const color = v > 0 ? `rgba(74, 144, 226, ${normalized})` : `rgba(244, 67, 54, ${normalized})`;
+                return `<div class="activation-cell" style="background: ${color}" title="神经元 ${i}: ${v.toFixed(4)}">${i}</div>`;
+            }).join('');
+        }
+
+        function drawNetwork(data) {
+            const svg = d3.select('#network-svg');
+            svg.selectAll('*').remove();
+
+            const width = svg.node().clientWidth;
+            const height = svg.node().clientHeight;
+
+            const layers = [
+                { name: 'input', size: 16, x: 50 },
+                { name: 'hidden', size: 24, x: width / 2 },
+                { name: 'output', size: 10, x: width - 50 }
+            ];
+
+            const nodes = [];
+            layers.forEach((layer, li) => {
+                const spacing = (height - 40) / (layer.size + 1);
+                for (let i = 0; i < layer.size; i++) {
+                    const node = {
+                        layer: layer.name,
+                        index: i,
+                        x: layer.x,
+                        y: 20 + spacing * (i + 1),
+                        activation: 0
+                    };
+
+                    if (layer.name === 'hidden' && data.hidden) {
+                        const step = Math.floor(data.hidden.length / layer.size);
+                        node.activation = data.hidden[i * step];
+                    } else if (layer.name === 'output' && data.output) {
+                        node.activation = data.output[i];
+                    }
+
+                    nodes.push(node);
+                }
+            });
+
+            const links = [];
+            for (let i = 0; i < 16; i++) {
+                for (let j = 0; j < 24; j++) {
+                    links.push({ source: i, target: 16 + j });
+                }
+            }
+            for (let i = 0; i < 24; i++) {
+                for (let j = 0; j < 10; j++) {
+                    links.push({ source: 16 + i, target: 40 + j });
+                }
+            }
+
+            svg.selectAll('.link-line')
+                .data(links)
+                .enter()
+                .append('line')
+                .attr('class', 'link-line')
+                .attr('x1', d => nodes[d.source].x)
+                .attr('y1', d => nodes[d.source].y)
+                .attr('x2', d => nodes[d.target].x)
+                .attr('y2', d => nodes[d.target].y)
+                .attr('stroke', '#999')
+                .attr('stroke-width', 0.5);
+
+            svg.selectAll('.node-circle')
+                .data(nodes)
+                .enter()
+                .append('circle')
+                .attr('class', 'node-circle')
+                .attr('cx', d => d.x)
+                .attr('cy', d => d.y)
+                .attr('r', d => d.layer === 'hidden' ? 6 : 8)
+                .attr('fill', d => {
+                    if (d.activation === 0) return '#ddd';
+                    const intensity = Math.min(1, Math.abs(d.activation) * 2);
+                    return d.activation > 0 ? `rgba(74, 144, 226, ${intensity})` : `rgba(244, 67, 54, ${intensity})`;
+                })
+                .attr('stroke', '#666')
+                .attr('stroke-width', 1)
+                .on('mouseover', function(event, d) {
+                    const tooltip = document.getElementById('tooltip');
+                    let text = `${d.layer}[${d.index}]`;
+                    if (d.activation !== 0) {
+                        text += `<br>激活值: ${d.activation.toFixed(4)}`;
+                    }
+                    tooltip.innerHTML = text;
+                    tooltip.style.display = 'block';
+                    tooltip.style.left = (event.pageX + 10) + 'px';
+                    tooltip.style.top = (event.pageY + 10) + 'px';
+                })
+                .on('mouseout', function() {
+                    document.getElementById('tooltip').style.display = 'none';
+                });
+
+            nodes.filter(d => d.layer === 'hidden').forEach(d => {
+                svg.append('text')
+                    .attr('x', d.x - 15)
+                    .attr('y', d.y + 4)
+                    .attr('class', 'hidden-label')
+                    .text(d.index);
+            });
+
+            nodes.filter(d => d.layer === 'output').forEach(d => {
+                svg.append('text')
+                    .attr('x', d.x + 12)
+                    .attr('y', d.y + 5)
+                    .attr('class', 'output-label')
+                    .text(d.index);
+            });
+        }
+
+        function displayComputation(computation) {
+            const container = document.getElementById('computationPanel');
+            if (!computation || !computation.steps) {
+                container.innerHTML = '<p style="color: #888;">计算数据不可用</p>';
+                return;
+            }
+
+            let html = computation.steps.map((step, stepIndex) => `
+                <div class="step-card" id="step-${stepIndex}">
+                    <div class="step-title">${step.name}</div>
+                    <div class="step-operation">操作: ${step.operation}</div>
+                    <div class="matrix-display">
+                        <div class="matrix-item">
+                            <div class="matrix-label">输入</div>
+                            <div class="matrix-shape">形状: [${step.input.shape.join(', ')}] ${step.input.type ? `(${step.input.type})` : ''}</div>
+                        </div>
+                        <div class="matrix-item">
+                            <div class="matrix-label">权重矩阵</div>
+                            <div class="matrix-shape">形状: [${step.weight.shape.join(', ')}]</div>
+                            <div class="matrix-values">[ ${step.weight.sample.slice(0, 8).map(v => v.toFixed(4)).join(', ')} ... ]</div>
+                        </div>
+                        <div class="matrix-item">
+                            <div class="matrix-label">偏置向量</div>
+                            <div class="matrix-shape">形状: [${step.bias.shape.join(', ')}]</div>
+                            <div class="matrix-values">[ ${step.bias.sample.slice(0, 8).map(v => v.toFixed(4)).join(', ')} ... ]</div>
+                        </div>
+                        <div class="matrix-item">
+                            <div class="matrix-label">输出</div>
+                            <div class="matrix-shape">形状: [${step.output.shape.join(', ')}]</div>
+                            <div class="matrix-values">[ ${step.output.activations.slice(0, 8).map(v => v.toFixed(4)).join(', ')} ... ]</div>
+                        </div>
+                    </div>
+                </div>
+            `).join('<div class="computation-arrow">↓</div>');
+
+            container.innerHTML = html;
+        }
+
+        let computationStep = 0;
+        let computationTimer = null;
+
+        function playComputation() {
+            const container = document.getElementById('computationPanel');
+            const steps = container.querySelectorAll('.step-card');
+
+            if (computationTimer) {
+                clearInterval(computationTimer);
+                computationTimer = null;
+                steps.forEach(s => s.classList.remove('step-active', 'step-completed'));
+                document.getElementById('playComputation').textContent = '▶ 播放计算过程';
+                computationStep = 0;
+                return;
+            }
+
+            document.getElementById('playComputation').textContent = '⏹ 停止播放';
+
+            function highlightStep(index) {
+                steps.forEach((step, i) => {
+                    step.classList.remove('step-active', 'step-completed');
+                    if (i < index) {
+                        step.classList.add('step-completed');
+                    } else if (i === index) {
+                        step.classList.add('step-active');
+                        step.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                });
+            }
+
+            highlightStep(0);
+
+            computationTimer = setInterval(() => {
+                computationStep++;
+                if (computationStep >= steps.length) {
+                    clearInterval(computationTimer);
+                    computationTimer = null;
+                    document.getElementById('playComputation').textContent = '▶ 重新播放';
+                    return;
+                }
+                highlightStep(computationStep);
+            }, 3000);
+        }
+
+        function setupEventListeners() {
+            document.getElementById('indexInput').addEventListener('change', (e) => {
+                let index = parseInt(e.target.value);
+                index = Math.max(0, Math.min(9999, index));
+                e.target.value = index;
+                loadSample(index);
+            });
+
+            document.getElementById('filterSelect').addEventListener('change', (e) => {
+                currentFilter = e.target.value;
+                updateFilteredIndices();
+            });
+
+            document.getElementById('prevBtn').addEventListener('click', () => {
+                if (currentIndex > 0) {
+                    loadSample(currentIndex - 1);
+                }
+            });
+
+            document.getElementById('nextBtn').addEventListener('click', () => {
+                if (currentIndex < 9999) {
+                    loadSample(currentIndex + 1);
+                }
+            });
+
+            document.getElementById('randomBtn').addEventListener('click', () => {
+                loadSample(Math.floor(Math.random() * 10000));
+            });
+
+            document.getElementById('playComputation').addEventListener('click', playComputation);
+        }
+
+        async function updateFilteredIndices() {
+            const maxIndex = currentFilter === 'all' ? 9999 : 100;
+            let filtered = [];
+            let index = 0;
+
+            while (filtered.length < 100 && index <= maxIndex) {
+                try {
+                    const data = await fetchJSON(`/api/predict?index=${index}`);
+                    if (currentFilter === 'all') {
+                        filtered.push(index);
+                    } else if (currentFilter === 'correct' && data.correct) {
+                        filtered.push(index);
+                    } else if (currentFilter === 'incorrect' && !data.correct) {
+                        filtered.push(index);
+                    }
+                } catch (e) {
+                    break;
+                }
+                index++;
+            }
+
+            filteredIndices = filtered;
+            if (filteredIndices.length > 0) {
+                loadSample(filteredIndices[0]);
+            }
+        }
+
+        window.addEventListener('load', init);
+    </script>
+</body>
+</html>
