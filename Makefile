@@ -3,6 +3,7 @@
 
 CC := clang
 CFLAGS := -O3 -march=native -ffast-math -Wall -Wextra
+PYTHON ?= python3
 
 # 检测操作系统
 UNAME_S := $(shell uname -s)
@@ -41,6 +42,10 @@ eval: eval.c tensor.h
 web: web_server.c api_handlers.c tensor.h
 	$(CC) $(CFLAGS) -o $@ web_server.c api_handlers.c $(LDFLAGS)
 
+# 编译 ANE M1 PoC（实验分支，不进入默认 all）
+ane-poc: ane_poc.c ane_backend.h ane_backend.m tensor.h
+	$(CC) $(CFLAGS) -o ane_poc ane_poc.c ane_backend.m $(LDFLAGS)
+
 # OpenMP 版本编译 (macOS 上使用 libomp)
 openmp: clean
 	$(CC) $(OMP_CFLAGS) -o train train.c $(OMP_LDFLAGS)
@@ -55,7 +60,7 @@ run: data train eval
 data: mnist_train.csv mnist_test.csv
 
 mnist_train.csv mnist_test.csv: create_mnist_csv.py
-	python3 create_mnist_csv.py
+	$(PYTHON) create_mnist_csv.py
 
 # 仅训练
 train-run: train data
@@ -69,9 +74,13 @@ eval-run: eval data
 web-run: web data
 	./web
 
+# 运行 ANE M1 PoC
+ane-poc-run: ane-poc data
+	./ane_poc
+
 # 清理编译产物
 clean:
-	rm -f $(TARGETS)
+	rm -f $(TARGETS) ane_poc bench_accelerate.log bench_openmp.log
 
 # 清理所有生成文件（包括数据和模型）
 cleanall: clean
@@ -97,7 +106,10 @@ help:
 	@echo "  train-run  - 编译并运行训练"
 	@echo "  eval-run   - 编译并运行评估"
 	@echo "  web-run    - 编译并启动 Web 服务"
+	@echo "  ane-poc    - 编译 ANE M1 前向 PoC 程序"
+	@echo "  ane-poc-run - 运行 ANE M1 前向 PoC (含数据准备)"
 	@echo "  debug      - Debug 编译 (带调试符号)"
+	@echo "  bench      - 跑 Accelerate vs OpenMP 训练耗时对比"
 	@echo "  clean      - 清理编译产物"
 	@echo "  cleanall   - 清理所有生成文件"
 	@echo "  help       - 显示此帮助信息"
@@ -107,4 +119,7 @@ help:
 	@echo "编译选项: $(CFLAGS)"
 	@echo "链接选项: $(LDFLAGS)"
 
-.PHONY: all openmp run data train-run eval-run web-run clean cleanall debug help
+bench:
+	./scripts/bench_backends.sh
+
+.PHONY: all openmp run data train-run eval-run web-run ane-poc ane-poc-run clean cleanall debug help bench
