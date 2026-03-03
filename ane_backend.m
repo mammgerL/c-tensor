@@ -15,6 +15,7 @@ static int g_checked = 0;
 static int g_private_framework_found = 0;
 static int g_opt_in = 0;
 static int g_runtime_ready = 0;
+static int g_dynamic_mode = 0;
 static int g_compile_count = 0;
 static int g_cache_hit_count = 0;
 static int g_fallback_count = 0;
@@ -91,6 +92,40 @@ static NSString* ane_dense_mil(int batch, int in_dim, int out_dim) {
         out_dim, in_dim, out_dim, in_dim,
         out_dim, batch,
         out_dim, batch];
+}
+
+static NSString* ane_dense_mil_dynamic(int batch, int in_dim, int out_dim) {
+    NSMutableString* m = [NSMutableString string];
+    [m appendString:
+        @"program(1.3)\n"
+        "[buildInfo = dict<string, string>({{\"coremlc-component-MIL\", \"3510.2.1\"}, "
+        "{\"coremlc-version\", \"3505.4.1\"}, {\"coremltools-component-milinternal\", \"\"}, "
+        "{\"coremltools-version\", \"9.0\"}})]\n{\n"];
+    int sp_total = batch + out_dim;
+    [m appendFormat:@"    func main<ios18>(tensor<fp32, [1, %d, 1, %d]> x) {\n", in_dim, sp_total];
+    [m appendString:@"        string to16 = const()[name = string(\"to16\"), val = string(\"fp16\")];\n"];
+    [m appendFormat:@"        tensor<fp16, [1, %d, 1, %d]> xh = cast(dtype = to16, x = x)[name = string(\"cin\")];\n", in_dim, sp_total];
+    [m appendString:@"        tensor<int32, [4]> ba = const()[name = string(\"ba\"), val = tensor<int32, [4]>([0,0,0,0])];\n"];
+    [m appendFormat:@"        tensor<int32, [4]> sa = const()[name = string(\"sa\"), val = tensor<int32, [4]>([1,%d,1,%d])];\n", in_dim, batch];
+    [m appendFormat:@"        tensor<fp16, [1,%d,1,%d]> act = slice_by_size(x=xh,begin=ba,size=sa)[name=string(\"act\")];\n", in_dim, batch];
+    [m appendFormat:@"        tensor<int32, [4]> bw = const()[name = string(\"bw\"), val = tensor<int32, [4]>([0,0,0,%d])];\n", batch];
+    [m appendFormat:@"        tensor<int32, [4]> sw = const()[name = string(\"sw\"), val = tensor<int32, [4]>([1,%d,1,%d])];\n", in_dim, out_dim];
+    [m appendFormat:@"        tensor<fp16, [1,%d,1,%d]> wt = slice_by_size(x=xh,begin=bw,size=sw)[name=string(\"wt\")];\n", in_dim, out_dim];
+    [m appendFormat:@"        tensor<int32, [4]> ra = const()[name = string(\"ra\"), val = tensor<int32, [4]>([1,1,%d,%d])];\n", in_dim, batch];
+    [m appendFormat:@"        tensor<fp16, [1,1,%d,%d]> a2 = reshape(shape=ra,x=act)[name=string(\"a2\")];\n", in_dim, batch];
+    [m appendString:@"        tensor<int32, [4]> pm = const()[name = string(\"pm\"), val = tensor<int32, [4]>([0,1,3,2])];\n"];
+    [m appendFormat:@"        tensor<fp16, [1,1,%d,%d]> a3 = transpose(perm=pm,x=a2)[name=string(\"a3\")];\n", batch, in_dim];
+    [m appendFormat:@"        tensor<int32, [4]> rw = const()[name = string(\"rw\"), val = tensor<int32, [4]>([1,1,%d,%d])];\n", in_dim, out_dim];
+    [m appendFormat:@"        tensor<fp16, [1,1,%d,%d]> W = reshape(shape=rw,x=wt)[name=string(\"W\")];\n", in_dim, out_dim];
+    [m appendString:@"        bool bF = const()[name = string(\"bF\"), val = bool(false)];\n"];
+    [m appendFormat:@"        tensor<fp16, [1,1,%d,%d]> yh = matmul(transpose_x=bF,transpose_y=bF,x=a3,y=W)[name=string(\"mm\")];\n", batch, out_dim];
+    [m appendFormat:@"        tensor<fp16, [1,1,%d,%d]> yt = transpose(perm=pm,x=yh)[name=string(\"yt\")];\n", out_dim, batch];
+    [m appendFormat:@"        tensor<int32, [4]> ro = const()[name = string(\"ro\"), val = tensor<int32, [4]>([1,%d,1,%d])];\n", out_dim, batch];
+    [m appendFormat:@"        tensor<fp16, [1,%d,1,%d]> yr = reshape(shape=ro,x=yt)[name=string(\"yr\")];\n", out_dim, batch];
+    [m appendString:@"        string to32 = const()[name = string(\"to32\"), val = string(\"fp32\")];\n"];
+    [m appendFormat:@"        tensor<fp32, [1,%d,1,%d]> y = cast(dtype = to32, x = yr)[name=string(\"cout\")];\n", out_dim, batch];
+    [m appendString:@"    } -> (y);\n}\n"];
+    return m;
 }
 
 static uint64_t hash_weights(const float* w, int n) {
@@ -174,16 +209,21 @@ static int ane_prepare_runtime_entry(
     uint64_t weight_hash,
     const float* w_io
 ) {
-    NSString* mil = ane_dense_mil(batch, in_dim, out_dim);
+    NSString* mil = g_dynamic_mode ? ane_dense_mil_dynamic(batch, in_dim, out_dim)
+                                   : ane_dense_mil(batch, in_dim, out_dim);
     NSData* mil_data = [mil dataUsingEncoding:NSUTF8StringEncoding];
-    NSData* weight_data = ane_build_weight_blob_from_io(w_io, in_dim, out_dim);
-    if (!weight_data) {
-        set_last_error("failed to allocate weight blob");
-        return 0;
+    NSDictionary* wdict = nil;
+    NSData* weight_data = nil;
+    if (!g_dynamic_mode) {
+        weight_data = ane_build_weight_blob_from_io(w_io, in_dim, out_dim);
+        if (!weight_data) {
+            set_last_error("failed to allocate weight blob");
+            return 0;
+        }
+        wdict = @{
+            @"@model_path/weights/weight.bin": @{@"offset": @0, @"data": weight_data}
+        };
     }
-    NSDictionary* wdict = @{
-        @"@model_path/weights/weight.bin": @{@"offset": @0, @"data": weight_data}
-    };
 
     id desc = ((id(*)(Class, SEL, id, id, id))objc_msgSend)(
         g_ane_desc_cls, @selector(modelWithMILText:weights:optionsPlist:), mil_data, wdict, nil
@@ -207,7 +247,9 @@ static int ane_prepare_runtime_entry(
     [fm createDirectoryAtPath:[td stringByAppendingPathComponent:@"weights"]
         withIntermediateDirectories:YES attributes:nil error:nil];
     [mil_data writeToFile:[td stringByAppendingPathComponent:@"model.mil"] atomically:YES];
-    [weight_data writeToFile:[td stringByAppendingPathComponent:@"weights/weight.bin"] atomically:YES];
+    if (!g_dynamic_mode) {
+        [weight_data writeToFile:[td stringByAppendingPathComponent:@"weights/weight.bin"] atomically:YES];
+    }
 
     NSError* e = nil;
     BOOL ok = ((BOOL(*)(id, SEL, unsigned int, id, NSError**))objc_msgSend)(
@@ -229,7 +271,9 @@ static int ane_prepare_runtime_entry(
         return 0;
     }
 
-    size_t in_bytes = (size_t)batch * in_dim * sizeof(float);
+    size_t in_bytes = g_dynamic_mode
+        ? (size_t)in_dim * (batch + out_dim) * sizeof(float)
+        : (size_t)batch * in_dim * sizeof(float);
     size_t out_bytes = (size_t)batch * out_dim * sizeof(float);
 
     IOSurfaceRef in_surface = ane_create_surface(in_bytes);
@@ -289,7 +333,7 @@ static AnekernelCacheEntry* ane_get_kernel(
     int out_dim,
     const float* w_io
 ) {
-    uint64_t wh = hash_weights(w_io, in_dim * out_dim);
+    uint64_t wh = g_dynamic_mode ? 0ULL : hash_weights(w_io, in_dim * out_dim);
     int hit = ane_find_kernel_slot(batch, in_dim, out_dim, wh);
     if (hit >= 0) {
         g_cache_hit_count++;
@@ -321,6 +365,7 @@ static AnekernelCacheEntry* ane_get_kernel(
 static int ane_eval_dense(
     AnekernelCacheEntry* k,
     const float* x_rowmajor,
+    const float* w_rowmajor,
     const float* b,
     float* out_rowmajor
 ) {
@@ -328,14 +373,28 @@ static int ane_eval_dense(
     int in_dim = k->in_dim;
     int out_dim = k->out_dim;
 
-    for (int s = 0; s < batch; s++) {
-        const float* xr = x_rowmajor + (size_t)s * in_dim;
+    if (g_dynamic_mode) {
+        int sp = batch + out_dim;
         for (int c = 0; c < in_dim; c++) {
-            k->in_cf[(size_t)c * batch + s] = xr[c];
+            for (int s = 0; s < batch; s++) {
+                k->in_cf[(size_t)c * sp + s] = x_rowmajor[(size_t)s * in_dim + c];
+            }
+            for (int o = 0; o < out_dim; o++) {
+                k->in_cf[(size_t)c * sp + batch + o] = w_rowmajor[(size_t)c * out_dim + o];
+            }
+        }
+    } else {
+        for (int s = 0; s < batch; s++) {
+            const float* xr = x_rowmajor + (size_t)s * in_dim;
+            for (int c = 0; c < in_dim; c++) {
+                k->in_cf[(size_t)c * batch + s] = xr[c];
+            }
         }
     }
 
-    size_t in_bytes = (size_t)batch * in_dim * sizeof(float);
+    size_t in_bytes = g_dynamic_mode
+        ? (size_t)in_dim * (batch + out_dim) * sizeof(float)
+        : (size_t)batch * in_dim * sizeof(float);
     size_t out_bytes = (size_t)batch * out_dim * sizeof(float);
 
     IOSurfaceLock(k->in_surface, 0, NULL);
@@ -381,6 +440,8 @@ static void ane_probe_once(void) {
 
     const char* env = getenv("ANE_ENABLE_PRIVATE_API");
     g_opt_in = (env && strcmp(env, "1") == 0) ? 1 : 0;
+    const char* dyn = getenv("ANE_DYNAMIC_WEIGHTS");
+    g_dynamic_mode = (dyn && strcmp(dyn, "1") == 0) ? 1 : 0;
     if (!g_opt_in) {
         set_last_error("private ANE API disabled (set ANE_ENABLE_PRIVATE_API=1 to opt-in)");
         return;
@@ -400,7 +461,9 @@ static void ane_probe_once(void) {
     dlclose(h);
 
     if (g_runtime_ready) {
-        set_last_error("private ANE runtime ready");
+        set_last_error(g_dynamic_mode
+            ? "private ANE runtime ready (dynamic weights mode)"
+            : "private ANE runtime ready");
     } else {
         set_last_error("private ANE framework found but required classes are missing");
     }
@@ -468,7 +531,7 @@ int ane_dense_relu_forward(
 
     if (g_opt_in && g_private_framework_found && g_runtime_ready) {
         AnekernelCacheEntry* k = ane_get_kernel(batch, in_dim, out_dim, w);
-        if (k && ane_eval_dense(k, x, b, out)) {
+        if (k && ane_eval_dense(k, x, w, b, out)) {
             set_last_error("ANE eval OK (dense on ANE, bias/relu on CPU)");
             return ANE_BACKEND_OK;
         }

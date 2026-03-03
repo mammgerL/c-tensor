@@ -182,6 +182,8 @@ void kaiming_uniform_(Arr *arr, int fan_in);
 | `make data` | 生成 MNIST 数据集 |
 | `make run` | 完整流程：数据 → 训练 → 评估 |
 | `make train-run` | 编译并运行训练 |
+| `make train-ane` | 编译 ANE 实验训练程序 |
+| `make train-ane-run` | 编译并运行 ANE 实验训练程序 |
 | `make eval-run` | 编译并运行评估 |
 | `make web` | 启动 Web 可视化服务 |
 | `make debug` | Debug 编译（带调试符号） |
@@ -218,6 +220,26 @@ void kaiming_uniform_(Arr *arr, int fan_in);
 4. **缓存友好**：Fisher-Yates 洗牌保持数据局部性
 
 ## 扩展使用
+
+### ANE 实验训练（macOS，私有 API）
+
+> 该路径是实验功能，默认关闭，不影响主线 Accelerate/OpenMP。
+
+```bash
+# 编译 ANE 实验训练程序
+make train-ane
+
+# 运行 ANE 模式（第一层 dense 前向走 ANE，反向仍在 CPU）
+ANE_ENABLE_PRIVATE_API=1 TENSOR_USE_ANE=1 ./train_ane
+
+# 可选：缩短训练用于验证
+ANE_ENABLE_PRIVATE_API=1 TENSOR_USE_ANE=1 TRAIN_STEPS=300 ./train_ane
+```
+
+可用环境变量：
+- `TENSOR_USE_ANE=1`：启用训练循环中的 ANE 路径
+- `ANE_ENABLE_PRIVATE_API=1`：启用私有 ANE API 探测与调用
+- `TRAIN_STEPS` / `TRAIN_BATCH` / `TRAIN_LR`：覆盖默认训练参数
 
 ### 使用 OpenMP 编译（macOS）
 

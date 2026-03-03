@@ -4,9 +4,24 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#if USE_ANE_RUNTIME
+#include "ane_backend.h"
+#endif
 
 static void get_time(struct timeval* t) {
     gettimeofday(t, NULL);
+}
+
+static int env_int_or(const char* name, int defv) {
+    const char* s = getenv(name);
+    if (!s || !*s) return defv;
+    return atoi(s);
+}
+
+static float env_float_or(const char* name, float defv) {
+    const char* s = getenv(name);
+    if (!s || !*s) return defv;
+    return strtof(s, NULL);
 }
 
 /*
@@ -160,12 +175,27 @@ int main() {
     for (int i = 0; i < w2->data->size; i++) w2->data->values[i] = kaiming_uniform(H);
 
     // ---------------- training hyperparams ----------------
-    int B = 128;
-    float lr = 0.005f;
-    int steps = 20000;
+    int B = env_int_or("TRAIN_BATCH", 128);
+    float lr = env_float_or("TRAIN_LR", 0.005f);
+    int steps = env_int_or("TRAIN_STEPS", 20000);
 
     Tensor* batch_x = create_zero_tensor((int[]) { B, 784 }, 2);
     Tensor* batch_y = create_zero_tensor((int[]) { B, 10 }, 2);
+
+#if USE_ANE_RUNTIME
+    const int use_ane = env_int_or("TENSOR_USE_ANE", 0) ? 1 : 0;
+    float* ane_r1_buf = NULL;
+    float* ane_dz_buf = NULL;
+    if (use_ane) {
+        ane_r1_buf = (float*)aligned_alloc_64((size_t)B * H * sizeof(float));
+        ane_dz_buf = (float*)aligned_alloc_64((size_t)B * H * sizeof(float));
+        if (!ane_r1_buf || !ane_dz_buf) {
+            perror("aligned_alloc_64");
+            exit(1);
+        }
+        printf("ANE training mode enabled (dense1 forward on ANE)\n");
+    }
+#endif
 
     // batch sampler
     BatchSampler sampler;
@@ -192,9 +222,32 @@ int main() {
         get_next_batch(&sampler, batch_x, batch_y, x, y, B);
 
         // forward
-        Tensor* h1 = matmul(batch_x, w1);       // (B,H)
-        Tensor* h1b = add_bias(h1, b1);          // (B,H)
-        Tensor* r1 = relu(h1b);                 // (B,H)
+        Tensor* h1 = NULL;
+        Tensor* h1b = NULL;
+        Tensor* r1 = NULL;
+
+#if USE_ANE_RUNTIME
+        if (use_ane) {
+            int rc = ane_dense_relu_forward(
+                batch_x->data->values,
+                w1->data->values,
+                b1->data->values,
+                ane_r1_buf,
+                B, 784, H
+            );
+            if (rc == ANE_BACKEND_ERROR) {
+                fprintf(stderr, "ANE forward error: %s\n", ane_backend_last_error());
+                return 1;
+            }
+            r1 = create_tensor(ane_r1_buf, (int[]) { B, H }, 2);
+        }
+        else
+#endif
+        {
+            h1 = matmul(batch_x, w1);       // (B,H)
+            h1b = add_bias(h1, b1);          // (B,H)
+            r1 = relu(h1b);                 // (B,H)
+        }
 
         Tensor* h2 = matmul(r1, w2);            // (B,10)
         Tensor* h2b = add_bias(h2, b2);          // (B,10)
@@ -208,6 +261,34 @@ int main() {
         // backward
         loss->grad->values[0] = 1.0f;
         backward(loss);
+
+#if USE_ANE_RUNTIME
+        if (use_ane) {
+            // manual backward for layer1: dz = d(r1) * relu'(z), z>0 <=> r1>0
+            const float* dr1 = r1->grad->values;
+            const float* r1v = r1->data->values;
+            for (int i = 0; i < B * H; i++) {
+                ane_dz_buf[i] = (r1v[i] > 0.0f) ? dr1[i] : 0.0f;
+            }
+
+            // dW1 += X^T * dZ
+            cblas_sgemm(CblasRowMajor,
+                CblasTrans, CblasNoTrans,
+                784, H, B,
+                1.0f,
+                batch_x->data->values, 784,
+                ane_dz_buf, H,
+                1.0f,
+                w1->grad->values, H);
+
+            // db1 += sum_b dZ[b,:]
+            for (int h = 0; h < H; h++) {
+                float s = 0.0f;
+                for (int b = 0; b < B; b++) s += ane_dz_buf[b * H + h];
+                b1->grad->values[h] += s;
+            }
+        }
+#endif
 
         // 在 free 之前把 loss 值存出来，避免 use-after-free
         float loss_val = loss->data->values[0];
@@ -235,8 +316,8 @@ int main() {
         }
 
         // free intermediates
-        free_tensor(h1);
-        free_tensor(h1b);
+        if (h1) free_tensor(h1);
+        if (h1b) free_tensor(h1b);
         free_tensor(r1);
         free_tensor(h2);
         free_tensor(h2b);
@@ -303,6 +384,13 @@ int main() {
     free_tensor(b1);
     free_tensor(w2);
     free_tensor(b2);
+
+#if USE_ANE_RUNTIME
+    if (use_ane) {
+        free(ane_r1_buf);
+        free(ane_dz_buf);
+    }
+#endif
 
     return 0;
 }

@@ -34,6 +34,10 @@ all: $(TARGETS)
 train: train.c tensor.h
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
+# 编译 ANE 训练程序（实验）
+train-ane: train.c tensor.h ane_backend.h ane_backend.m
+	$(CC) $(CFLAGS) -DUSE_ANE_RUNTIME=1 -fobjc-arc -o train_ane train.c ane_backend.m $(LDFLAGS) -lobjc -framework Foundation -framework IOSurface -framework CoreML
+
 # 编译评估程序
 eval: eval.c tensor.h
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
@@ -44,7 +48,7 @@ web: web_server.c api_handlers.c tensor.h
 
 # 编译 ANE M1 PoC（实验分支，不进入默认 all）
 ane-poc: ane_poc.c ane_backend.h ane_backend.m tensor.h
-	$(CC) $(CFLAGS) -o ane_poc ane_poc.c ane_backend.m $(LDFLAGS) -lobjc -framework Foundation -framework IOSurface
+	$(CC) $(CFLAGS) -fobjc-arc -o ane_poc ane_poc.c ane_backend.m $(LDFLAGS) -lobjc -framework Foundation -framework IOSurface -framework CoreML
 
 # OpenMP 版本编译 (macOS 上使用 libomp)
 openmp: clean
@@ -66,6 +70,10 @@ mnist_train.csv mnist_test.csv: create_mnist_csv.py
 train-run: train data
 	./train
 
+# 仅训练（ANE 实验版）
+train-ane-run: train-ane data
+	./train_ane
+
 # 仅评估
 eval-run: eval data
 	./eval
@@ -80,7 +88,7 @@ ane-poc-run: ane-poc data
 
 # 清理编译产物
 clean:
-	rm -f $(TARGETS) ane_poc bench_accelerate.log bench_openmp.log
+	rm -f $(TARGETS) train_ane ane_poc bench_accelerate.log bench_openmp.log
 
 # 清理所有生成文件（包括数据和模型）
 cleanall: clean
@@ -104,6 +112,8 @@ help:
 	@echo "  data       - 生成 MNIST CSV 数据集"
 	@echo "  run        - 完整流程: 数据准备 + 训练 + 评估"
 	@echo "  train-run  - 编译并运行训练"
+	@echo "  train-ane  - 编译 ANE 实验训练程序"
+	@echo "  train-ane-run - 运行 ANE 实验训练程序"
 	@echo "  eval-run   - 编译并运行评估"
 	@echo "  web-run    - 编译并启动 Web 服务"
 	@echo "  ane-poc    - 编译 ANE M1 前向 PoC 程序"
@@ -122,4 +132,4 @@ help:
 bench:
 	./scripts/bench_backends.sh
 
-.PHONY: all openmp run data train-run eval-run web-run ane-poc ane-poc-run clean cleanall debug help bench
+.PHONY: all openmp run data train-run train-ane train-ane-run eval-run web-run ane-poc ane-poc-run clean cleanall debug help bench

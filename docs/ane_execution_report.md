@@ -76,6 +76,14 @@ ANE_ENABLE_PRIVATE_API=1 ANE_DYNAMIC_WEIGHTS=1 ./ane_poc 128 20
 - Current outcome: `ANE descriptor creation failed`
 - Falls back to CPU.
 
+6. Hybrid ANE training run (in this repo)
+```bash
+ANE_ENABLE_PRIVATE_API=1 TENSOR_USE_ANE=1 TRAIN_STEPS=300 ./train_ane
+```
+- Training loop completed successfully.
+- Model file `mnist_mlp.bin` saved normally.
+- Follow-up eval after this short run: `84.18% (8418/10000)`.
+
 ## Current decision
 
 - Keep current default ANE path as the stable experimental baseline:
