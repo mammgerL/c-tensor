@@ -13,7 +13,13 @@ Non-goals:
 
 ## Why experimental only
 
-The referenced ANE approach (`maderix/ANE`) is research-oriented and relies on private APIs (`_ANEClient`, `_ANECompiler`).
+The referenced ANE approach (`maderix/ANE`) is research-oriented and relies on private APIs.
+In local validation, the effective in-memory runtime path is centered on:
+- `_ANEClient`
+- `_ANEInMemoryModelDescriptor`
+- `_ANEInMemoryModel`
+- `_ANERequest`
+- `_ANEIOSurfaceObject`
 
 Observed limitations from upstream notes:
 - Incomplete training offload (parts still on CPU)

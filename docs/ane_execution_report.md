@@ -1,0 +1,95 @@
+# ANE Execution Report (experimental/ane-backend)
+
+This document records what was executed on local machine and what was learned.
+
+## Environment
+
+- Host: Apple Silicon macOS 26.3 (Darwin 25.3.0)
+- Branch: `experimental/ane-backend`
+- Date: 2026-03-03
+
+## Commit timeline
+
+1. `b1cf34e` — Add ANE scaffold and benchmark workflow
+2. `b17f8f0` — Add runtime probe scaffold and cache stats
+3. `b5dc33c` — Fix class detection to match in-memory runtime APIs
+4. `99cab68` — Implement real ANE dense forward bridge with cached kernels
+
+## Key findings
+
+1. Class detection mismatch was the first blocker.
+- `_ANECompiler` is not required for the in-memory path used by upstream code.
+- Required classes on this machine are:
+  - `_ANEClient`
+  - `_ANEInMemoryModelDescriptor`
+  - `_ANEInMemoryModel`
+  - `_ANERequest`
+  - `_ANEIOSurfaceObject`
+
+2. Real ANE forward path is now running in local `ane_backend`.
+- Mode: dense on ANE, bias+ReLU on CPU.
+- Trigger: `ANE_ENABLE_PRIVATE_API=1`.
+
+3. Dynamic weight path remains incomplete in local backend.
+- `ANE_DYNAMIC_WEIGHTS=1` currently fails with descriptor creation in this code path.
+- Upstream dynamic matmul test does work locally (see below), so the machine is capable.
+
+## Reproduced commands and outcomes
+
+1. Baseline train backend benchmark (project script)
+```bash
+make bench
+```
+- Accelerate elapsed: `6.306540s`
+- OpenMP elapsed: `148.761266s`
+- Speedup: `23.59x` (OpenMP / Accelerate)
+
+2. Local ANE PoC (default fallback mode)
+```bash
+./ane_poc 128 20
+```
+- `ANE backend available: no`
+- CPU fallback path active
+
+3. Local ANE PoC (real ANE path)
+```bash
+ANE_ENABLE_PRIVATE_API=1 ./ane_poc 128 20
+```
+- `ANE backend available: yes`
+- `ANE status: ANE eval OK (dense on ANE, bias/relu on CPU)`
+- cache stats show compile once + cache hits
+
+4. Upstream ANE repository validation
+```bash
+cd /tmp/ANE_test_43759/training
+./test_ane_advanced
+./test_perf_stats
+./test_dynamic_matmul
+```
+- In-memory ANE compile/load/eval works.
+- Dynamic matmul test passes correctness and performance checks.
+
+5. Local dynamic mode trial (in this repo)
+```bash
+ANE_ENABLE_PRIVATE_API=1 ANE_DYNAMIC_WEIGHTS=1 ./ane_poc 128 20
+```
+- Current outcome: `ANE descriptor creation failed`
+- Falls back to CPU.
+
+## Current decision
+
+- Keep current default ANE path as the stable experimental baseline:
+  - baked-weight ANE compile per weight snapshot
+  - CPU fallback always available
+- Continue implementing dynamic-weight path in a separate step before training-loop integration.
+
+## Next process (short)
+
+1. Create a dedicated `ane_dynamic_poc.c` by reusing upstream helper flow.
+2. Validate dynamic descriptor/compile/eval there first.
+3. Port the validated helper into `ane_backend.m`.
+4. Gate with `ANE_DYNAMIC_WEIGHTS=1`.
+5. Integrate into `train.c` behind explicit opt-in and measure:
+   - step time
+   - final accuracy
+   - compile/cache/fallback counters
