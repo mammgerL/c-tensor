@@ -253,6 +253,15 @@ ANE_ENABLE_PRIVATE_API=1 TENSOR_USE_ANE=1 TRAIN_STEPS=300 ./train_ane
 - 默认会根据第二层形状自动选后端，避免小矩阵走 ANE 导致变慢。
 - 当前默认配置下（`B=128, H=256, O=10`）会自动选择 CPU。
 
+推荐配置：
+- 日常训练（推荐）：
+  - `ANE_ENABLE_PRIVATE_API=1 ANE_DYNAMIC_WEIGHTS=1 TENSOR_USE_ANE=1 ./train_ane`
+  - 保持 `TENSOR_USE_ANE_LAYER2` 不设置（自动）
+- 排查/实验第二层 ANE：
+  - 强制开启：`TENSOR_USE_ANE_LAYER2=1`
+  - 强制关闭：`TENSOR_USE_ANE_LAYER2=0`
+  - 当前已验证：`B=128,H=256,O=10` 下强制开启会更慢
+
 ### 使用 OpenMP 编译（macOS）
 
 ```bash

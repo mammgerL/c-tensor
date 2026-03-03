@@ -162,6 +162,7 @@ ANE_ENABLE_PRIVATE_API=1 ANE_DYNAMIC_WEIGHTS=1 TENSOR_USE_ANE=1 TENSOR_USE_ANE_L
 - Keep ANE path experimental and opt-in only.
 - Prefer dynamic-weight mode for experiments:
   - `ANE_ENABLE_PRIVATE_API=1 ANE_DYNAMIC_WEIGHTS=1 TENSOR_USE_ANE=1`
+- Keep layer2 backend in `auto` policy by default (`TENSOR_USE_ANE_LAYER2` unset).
 - Default production recommendation remains Accelerate on macOS.
 
 ## Next process (short)
