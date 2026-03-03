@@ -184,6 +184,7 @@ int get_query_param(const char* query, const char* param, char* value, size_t va
 extern void handle_api_architecture(int client_fd);
 extern void handle_api_predict(int client_fd, const char* query);
 extern void handle_api_eval(int client_fd);
+extern void handle_api_indices(int client_fd, const char* query);
 
 static void handle_request(int client_fd) {
     char buffer[BUFFER_SIZE];
@@ -212,6 +213,8 @@ static void handle_request(int client_fd) {
         handle_api_predict(client_fd, req.query);
     } else if (strcmp(req.path, "/api/eval") == 0) {
         handle_api_eval(client_fd);
+    } else if (strcmp(req.path, "/api/indices") == 0) {
+        handle_api_indices(client_fd, req.query);
     } else {
         send_response(client_fd, 404, "Not Found", "text/plain", "Not Found");
     }

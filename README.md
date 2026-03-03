@@ -243,11 +243,11 @@ make openmp
 ## Web 可视化服务
 
 提供交互式 Web 界面，用于：
-- 浏览测试样本（支持按正确/错误过滤）
-- 查看识别错误的图片详情
-- 展示分类概率分布
-- 可视化隐藏层激活
-- 查看网络权重（W1 滤波器、W2 连接）
+- 浏览测试样本（支持 `all/correct/incorrect` 筛选）
+- 动态播放一次前向推理的 5 个学习步骤
+- 展示输出概率、Top-2 margin、隐藏层稀疏度
+- 可视化隐藏层激活与关键贡献神经元（Top contributors）
+- 联动网络图高亮（输入层 → 隐藏层 → 输出层）
 
 ### 启动服务
 
@@ -262,11 +262,12 @@ make web
 
 访问 http://localhost:3000
 
-### 功能截图
+### Web API（用于前端）
 
-- **样本网格**：缩略图展示，绿色标记正确，红色标记错误
-- **详情视图**：放大图片、真实/预测标签、概率条形图、激活热力图
-- **权重可视化**：256 个隐藏层神经元的 28x28 滤波器
+- `GET /api/architecture`：返回网络结构（输入/隐藏/输出维度）
+- `GET /api/eval`：返回整体评估与每类准确率（服务端缓存）
+- `GET /api/indices?filter=all|correct|incorrect[&limit=N]`：返回筛选后的样本索引
+- `GET /api/predict?index=N`：返回单样本推理详情（像素、隐藏层、logsoftmax、probabilities、logits、learning 解释字段）
 
 ## 模型文件格式
 

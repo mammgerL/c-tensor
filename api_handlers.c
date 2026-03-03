@@ -12,16 +12,120 @@ int get_query_param(const char* query, const char* param, char* value, size_t va
 static Tensor* g_w1 = NULL, * g_b1 = NULL, * g_w2 = NULL, * g_b2 = NULL;
 static Tensor* g_test_x = NULL, * g_test_y = NULL;
 static const int TEST_SIZE = 10000;
+static int* g_pred_cache = NULL;
+static int* g_true_cache = NULL;
+static unsigned char* g_correct_cache = NULL;
+static int g_eval_cache_ready = 0;
+static int g_eval_correct_total = 0;
+static int g_eval_total_by_class[10];
+static int g_eval_correct_by_class[10];
 
 extern void send_response(int client_fd, int status_code, const char* status_text,
                         const char* content_type, const char* body);
 extern int get_query_param(const char* query, const char* param, char* value, size_t value_len);
+
+typedef struct {
+    int index;
+    float activation;
+    float weight;
+    float contribution;
+    float abs_contribution;
+} HiddenContributor;
+
+static void select_top_contributors(
+    const float* hidden,
+    const float* w2,
+    int hidden_size,
+    int class_idx,
+    HiddenContributor* out,
+    int k
+) {
+    for (int i = 0; i < k; i++) {
+        out[i].index = -1;
+        out[i].activation = 0.0f;
+        out[i].weight = 0.0f;
+        out[i].contribution = 0.0f;
+        out[i].abs_contribution = -1.0f;
+    }
+
+    for (int h = 0; h < hidden_size; h++) {
+        float a = hidden[h];
+        float w = w2[h * 10 + class_idx];
+        float c = a * w;
+        float ac = fabsf(c);
+
+        int pos = -1;
+        for (int i = 0; i < k; i++) {
+            if (ac > out[i].abs_contribution) {
+                pos = i;
+                break;
+            }
+        }
+        if (pos < 0) continue;
+
+        for (int i = k - 1; i > pos; i--) out[i] = out[i - 1];
+        out[pos].index = h;
+        out[pos].activation = a;
+        out[pos].weight = w;
+        out[pos].contribution = c;
+        out[pos].abs_contribution = ac;
+    }
+}
+
+static void ensure_eval_cache(void) {
+    if (g_eval_cache_ready) return;
+    if (!g_test_x || !g_test_y || !g_w1 || !g_b1 || !g_w2 || !g_b2) return;
+
+    memset(g_eval_total_by_class, 0, sizeof(g_eval_total_by_class));
+    memset(g_eval_correct_by_class, 0, sizeof(g_eval_correct_by_class));
+    g_eval_correct_total = 0;
+
+    for (int idx = 0; idx < TEST_SIZE; idx++) {
+        const float* x_data = g_test_x->data->values + (size_t)idx * 784;
+        int true_label = -1;
+        for (int c = 0; c < 10; c++) {
+            if (g_test_y->data->values[idx * 10 + c] < 0) {
+                true_label = c;
+                break;
+            }
+        }
+
+        ForwardTrace* trace = forward_single(x_data, true_label, g_w1, g_b1, g_w2, g_b2);
+        int pred = trace->predicted;
+        int correct = (pred == true_label) ? 1 : 0;
+
+        g_true_cache[idx] = true_label;
+        g_pred_cache[idx] = pred;
+        g_correct_cache[idx] = (unsigned char)correct;
+
+        if (true_label >= 0 && true_label < 10) {
+            g_eval_total_by_class[true_label]++;
+            if (correct) g_eval_correct_by_class[true_label]++;
+        }
+        if (correct) g_eval_correct_total++;
+
+        free_forward_trace(trace);
+    }
+
+    g_eval_cache_ready = 1;
+}
 
 void web_init() {
     load_model("mnist_mlp.bin", &g_w1, &g_b1, &g_w2, &g_b2);
 
     g_test_x = create_zero_tensor((int[]) { TEST_SIZE, 784 }, 2);
     g_test_y = create_zero_tensor((int[]) { TEST_SIZE, 10 }, 2);
+
+    g_pred_cache = (int*)malloc((size_t)TEST_SIZE * sizeof(int));
+    g_true_cache = (int*)malloc((size_t)TEST_SIZE * sizeof(int));
+    g_correct_cache = (unsigned char*)malloc((size_t)TEST_SIZE * sizeof(unsigned char));
+    if (!g_pred_cache || !g_true_cache || !g_correct_cache) {
+        perror("malloc eval cache");
+        exit(1);
+    }
+    memset(g_pred_cache, 0, (size_t)TEST_SIZE * sizeof(int));
+    memset(g_true_cache, 0, (size_t)TEST_SIZE * sizeof(int));
+    memset(g_correct_cache, 0, (size_t)TEST_SIZE * sizeof(unsigned char));
 
     FILE* file = fopen("mnist_test.csv", "r");
     if (!file) {
@@ -125,7 +229,50 @@ void handle_api_predict(int client_fd, const char* query) {
 
     ForwardTrace* trace = forward_single(x_data, true_label, g_w1, g_b1, g_w2, g_b2);
 
-    char* buffer = (char*)malloc(131072);
+    const int top_k = 8;
+    HiddenContributor top_contributors[8];
+    float probabilities[10];
+    float logits[10];
+    int H = g_w1->data->shape[1];
+
+    exp_from_logsoftmax(probabilities, trace->output, 10);
+    for (int out = 0; out < 10; out++) {
+        float acc = g_b2->data->values[out];
+        for (int h = 0; h < H; h++) {
+            acc += trace->hidden[h] * g_w2->data->values[h * 10 + out];
+        }
+        logits[out] = acc;
+    }
+
+    int runner_up = (trace->predicted == 0) ? 1 : 0;
+    for (int i = 0; i < 10; i++) {
+        if (i == trace->predicted) continue;
+        if (probabilities[i] > probabilities[runner_up]) {
+            runner_up = i;
+        }
+    }
+    float margin = probabilities[trace->predicted] - probabilities[runner_up];
+
+    int active_hidden = 0;
+    float hidden_l1 = 0.0f;
+    float hidden_max = 0.0f;
+    for (int h = 0; h < H; h++) {
+        float v = trace->hidden[h];
+        if (v > 0.0f) active_hidden++;
+        hidden_l1 += fabsf(v);
+        if (fabsf(v) > hidden_max) hidden_max = fabsf(v);
+    }
+
+    select_top_contributors(
+        trace->hidden,
+        g_w2->data->values,
+        H,
+        trace->predicted,
+        top_contributors,
+        top_k
+    );
+
+    char* buffer = (char*)malloc(196608);
     if (!buffer) {
         free_forward_trace(trace);
         send_json_response(client_fd, "{\"error\":\"out of memory\"}");
@@ -133,9 +280,7 @@ void handle_api_predict(int client_fd, const char* query) {
     }
 
     char* p = buffer;
-    size_t remaining = 131072;
-    int H = g_w1->data->shape[1];
-
+    size_t remaining = 196608;
     int len = snprintf(p, remaining,
         "{"
         "\"index\":%d,"
@@ -143,164 +288,101 @@ void handle_api_predict(int client_fd, const char* query) {
         "\"predicted\":%d,"
         "\"correct\":%s,"
         "\"confidence\":%.6f,"
+        "\"margin\":%.6f,"
+        "\"runner_up\":%d,"
         "\"pixels\":",
         index, trace->true_label, trace->predicted,
         trace->predicted == trace->true_label ? "true" : "false",
-        trace->confidence);
-
+        trace->confidence,
+        margin,
+        runner_up);
     if (len > 0 && (size_t)len < remaining) {
         p += len;
         remaining -= (size_t)len;
     }
-
     append_float_array(&p, &remaining, trace->pixels, 784);
 
-    len = snprintf(p, remaining,
-        ",\"hidden\":");
+    len = snprintf(p, remaining, ",\"hidden\":");
     if (len > 0 && (size_t)len < remaining) {
         p += len;
         remaining -= (size_t)len;
     }
-
     append_float_array(&p, &remaining, trace->hidden, trace->hidden_size);
 
-    len = snprintf(p, remaining,
-        ",\"output\":");
+    len = snprintf(p, remaining, ",\"output\":");
     if (len > 0 && (size_t)len < remaining) {
         p += len;
         remaining -= (size_t)len;
     }
-
     append_float_array(&p, &remaining, trace->output, trace->output_size);
 
-    len = snprintf(p, remaining,
-        ",\"computation\":{"
-        "\"steps\":[");
+    len = snprintf(p, remaining, ",\"probabilities\":");
+    if (len > 0 && (size_t)len < remaining) {
+        p += len;
+        remaining -= (size_t)len;
+    }
+    append_float_array(&p, &remaining, probabilities, 10);
+
+    len = snprintf(p, remaining, ",\"logits\":");
+    if (len > 0 && (size_t)len < remaining) {
+        p += len;
+        remaining -= (size_t)len;
+    }
+    append_float_array(&p, &remaining, logits, 10);
+
+    len = snprintf(
+        p,
+        remaining,
+        ",\"learning\":{"
+        "\"active_hidden\":%d,"
+        "\"hidden_sparsity\":%.6f,"
+        "\"hidden_l1\":%.6f,"
+        "\"hidden_max_abs\":%.6f,"
+        "\"top_contributors\":[",
+        active_hidden,
+        1.0f - ((float)active_hidden / (float)H),
+        hidden_l1,
+        hidden_max
+    );
     if (len > 0 && (size_t)len < remaining) {
         p += len;
         remaining -= (size_t)len;
     }
 
-    len = snprintf(p, remaining,
-        "{"
-        "\"name\":\"Layer 1: Input -> Hidden\","
-        "\"operation\":\"matmul + bias + relu\","
-        "\"input\":{\"shape\":[1,784],\"type\":\"image_pixels\"},"
-        "\"weight\":{\"shape\":[784,%d],\"sample\":[", H);
-    if (len > 0 && (size_t)len < remaining) {
-        p += len;
-        remaining -= (size_t)len;
-    }
-
-    for (int i = 0; i < 5 && i < H; i++) {
-        append_float(&p, &remaining, g_w1->data->values[i]);
-        if (i < 4 && i < H - 1) {
-            len = snprintf(p, remaining, ",");
-            if (len > 0 && (size_t)len < remaining) {
-                p += len;
-                remaining -= (size_t)len;
-            }
+    int appended = 0;
+    for (int i = 0; i < top_k; i++) {
+        if (top_contributors[i].index < 0) continue;
+        len = snprintf(
+            p,
+            remaining,
+            "%s{\"hidden_index\":%d,\"activation\":%.6f,\"weight_to_pred\":%.6f,\"contribution\":%.6f}",
+            appended ? "," : "",
+            top_contributors[i].index,
+            top_contributors[i].activation,
+            top_contributors[i].weight,
+            top_contributors[i].contribution
+        );
+        if (len > 0 && (size_t)len < remaining) {
+            p += len;
+            remaining -= (size_t)len;
+            appended = 1;
         }
     }
 
-    len = snprintf(p, remaining,
-        "]},"
-        "\"bias\":{\"shape\":[%d],\"sample\":[", H);
-    if (len > 0 && (size_t)len < remaining) {
-        p += len;
-        remaining -= (size_t)len;
-    }
-
-    for (int i = 0; i < 5 && i < H; i++) {
-        append_float(&p, &remaining, g_b1->data->values[i]);
-        if (i < 4 && i < H - 1) {
-            len = snprintf(p, remaining, ",");
-            if (len > 0 && (size_t)len < remaining) {
-                p += len;
-                remaining -= (size_t)len;
-            }
-        }
-    }
-
-    len = snprintf(p, remaining,
-        "]},"
-        "\"output\":{\"shape\":[1,%d],\"activations\":", H);
-    if (len > 0 && (size_t)len < remaining) {
-        p += len;
-        remaining -= (size_t)len;
-    }
-
-    append_float_array(&p, &remaining, trace->hidden, H);
-
-    len = snprintf(p, remaining,
-        "}},{"
-        "\"name\":\"Layer 2: Hidden -> Output\","
-        "\"operation\":\"matmul + bias + logsoftmax\","
-        "\"input\":{\"shape\":[1,%d],\"type\":\"relu_activations\"},"
-        "\"weight\":{\"shape\":[%d,10],\"sample\":[", H, H);
-    if (len > 0 && (size_t)len < remaining) {
-        p += len;
-        remaining -= (size_t)len;
-    }
-
-    for (int i = 0; i < 5 && i < H; i++) {
-        for (int j = 0; j < 2; j++) {
-            append_float(&p, &remaining, g_w2->data->values[i * 10 + j]);
-            if (j == 0) {
-                len = snprintf(p, remaining, ",");
-                if (len > 0 && (size_t)len < remaining) {
-                    p += len;
-                    remaining -= (size_t)len;
-                }
-            }
-        }
-        if (i < 4 && i < H - 1) {
-            len = snprintf(p, remaining, ",");
-            if (len > 0 && (size_t)len < remaining) {
-                p += len;
-                remaining -= (size_t)len;
-            }
-        }
-    }
-
-    len = snprintf(p, remaining,
-        "]},"
-        "\"bias\":{\"shape\":[10],\"sample\":[");
-    if (len > 0 && (size_t)len < remaining) {
-        p += len;
-        remaining -= (size_t)len;
-    }
-
-    for (int i = 0; i < 5 && i < 10; i++) {
-        append_float(&p, &remaining, g_b2->data->values[i]);
-        if (i < 4) {
-            len = snprintf(p, remaining, ",");
-            if (len > 0 && (size_t)len < remaining) {
-                p += len;
-                remaining -= (size_t)len;
-            }
-        }
-    }
-
-    len = snprintf(p, remaining,
-        "]},"
-        "\"output\":{\"shape\":[1,10],\"activations\":");
-    if (len > 0 && (size_t)len < remaining) {
-        p += len;
-        remaining -= (size_t)len;
-    }
-
-    append_float_array(&p, &remaining, trace->output, 10);
-
-    len = snprintf(p, remaining,
-        "}}]}}");
+    len = snprintf(
+        p,
+        remaining,
+        "]},\"computation\":{\"steps\":["
+        "{\"name\":\"Layer 1: Input -> Hidden\",\"operation\":\"matmul + bias + relu\"},"
+        "{\"name\":\"Layer 2: Hidden -> Output\",\"operation\":\"matmul + bias + logsoftmax\"}"
+        "]}}"
+    );
     if (len > 0 && (size_t)len < remaining) {
         p += len;
         remaining -= (size_t)len;
     }
 
     send_json_response(client_fd, buffer);
-
     free(buffer);
     free_forward_trace(trace);
 }
@@ -311,57 +393,14 @@ void handle_api_eval(int client_fd) {
         return;
     }
 
-    int correct = 0;
-    int total = 0;
-    int* correct_by_class = (int*)calloc(10, sizeof(int));
-    int* total_by_class = (int*)calloc(10, sizeof(int));
-
-    const int BATCH_SIZE = 256;
-
-    for (int start = 0; start < TEST_SIZE; start += BATCH_SIZE) {
-        int curB = (start + BATCH_SIZE <= TEST_SIZE) ? BATCH_SIZE : (TEST_SIZE - start);
-
-        for (int i = 0; i < curB; i++) {
-            int idx = start + i;
-            const float* x_data = g_test_x->data->values + (size_t)idx * 784;
-
-            int true_label = -1;
-            for (int c = 0; c < 10; c++) {
-                if (g_test_y->data->values[idx * 10 + c] < 0) {
-                    true_label = c;
-                    break;
-                }
-            }
-
-            Tensor* x = create_zero_tensor((int[]) { 1, 784 }, 2);
-            memcpy(x->data->values, x_data, 784 * sizeof(float));
-
-            Tensor* h1 = matmul(x, g_w1);
-            Tensor* h1b = add_bias(h1, g_b1);
-            Tensor* r1 = relu(h1b);
-            Tensor* h2 = matmul(r1, g_w2);
-            Tensor* h2b = add_bias(h2, g_b2);
-            Tensor* lout = logsoftmax(h2b);
-
-            int predicted = argmax(lout->data->values, 10);
-
-            total++;
-            total_by_class[true_label]++;
-
-            if (predicted == true_label) {
-                correct++;
-                correct_by_class[true_label]++;
-            }
-
-            free_tensor(x);
-            free_tensor(h1);
-            free_tensor(h1b);
-            free_tensor(r1);
-            free_tensor(h2);
-            free_tensor(h2b);
-            free_tensor(lout);
-        }
+    ensure_eval_cache();
+    if (!g_eval_cache_ready) {
+        send_json_response(client_fd, "{\"error\":\"cache not ready\"}");
+        return;
     }
+
+    int total = TEST_SIZE;
+    int correct = g_eval_correct_total;
 
     char response[4096];
     float accuracy = 100.0f * (float)correct / (float)total;
@@ -372,6 +411,7 @@ void handle_api_eval(int client_fd) {
         "\"correct\":%d,"
         "\"accuracy\":%.2f,"
         "\"incorrect\":%d,"
+        "\"cached\":true,"
         "\"by_class\":[",
         total, correct, accuracy, total - correct);
 
@@ -380,13 +420,17 @@ void handle_api_eval(int client_fd) {
         if (i == 0) {
             class_len = snprintf(response + len, sizeof(response) - len,
                 "{\"digit\":%d,\"correct\":%d,\"total\":%d,\"accuracy\":%.2f}",
-                i, correct_by_class[i], total_by_class[i],
-                total_by_class[i] > 0 ? (100.0f * correct_by_class[i]) / total_by_class[i] : 0.0f);
+                i, g_eval_correct_by_class[i], g_eval_total_by_class[i],
+                g_eval_total_by_class[i] > 0
+                    ? (100.0f * g_eval_correct_by_class[i]) / g_eval_total_by_class[i]
+                    : 0.0f);
         } else {
             class_len = snprintf(response + len, sizeof(response) - len,
                 ",{\"digit\":%d,\"correct\":%d,\"total\":%d,\"accuracy\":%.2f}",
-                i, correct_by_class[i], total_by_class[i],
-                total_by_class[i] > 0 ? (100.0f * correct_by_class[i]) / total_by_class[i] : 0.0f);
+                i, g_eval_correct_by_class[i], g_eval_total_by_class[i],
+                g_eval_total_by_class[i] > 0
+                    ? (100.0f * g_eval_correct_by_class[i]) / g_eval_total_by_class[i]
+                    : 0.0f);
         }
         if (class_len > 0 && len + class_len < (int)sizeof(response)) {
             len += class_len;
@@ -396,7 +440,78 @@ void handle_api_eval(int client_fd) {
     snprintf(response + len, sizeof(response) - len, "]}");
 
     send_json_response(client_fd, response);
+}
 
-    free(correct_by_class);
-    free(total_by_class);
+void handle_api_indices(int client_fd, const char* query) {
+    if (!g_w1 || !g_b1 || !g_w2 || !g_b2) {
+        send_json_response(client_fd, "{\"error\":\"model not loaded\"}");
+        return;
+    }
+
+    ensure_eval_cache();
+    if (!g_eval_cache_ready) {
+        send_json_response(client_fd, "{\"error\":\"cache not ready\"}");
+        return;
+    }
+
+    char filter_buf[32] = "all";
+    (void)get_query_param(query, "filter", filter_buf, sizeof(filter_buf));
+
+    int mode = 0;
+    if (strcmp(filter_buf, "correct") == 0) mode = 1;
+    else if (strcmp(filter_buf, "incorrect") == 0) mode = 2;
+    else strcpy(filter_buf, "all");
+
+    int limit = TEST_SIZE;
+    char limit_buf[32];
+    if (get_query_param(query, "limit", limit_buf, sizeof(limit_buf))) {
+        int parsed = atoi(limit_buf);
+        if (parsed >= 0 && parsed <= TEST_SIZE) limit = parsed;
+    }
+
+    char* buffer = (char*)malloc((size_t)TEST_SIZE * 8 + 512);
+    if (!buffer) {
+        send_json_response(client_fd, "{\"error\":\"out of memory\"}");
+        return;
+    }
+
+    char* p = buffer;
+    size_t remaining = (size_t)TEST_SIZE * 8 + 512;
+
+    int len = snprintf(
+        p,
+        remaining,
+        "{\"filter\":\"%s\",\"total\":%d,\"indices\":[",
+        filter_buf,
+        mode == 0 ? TEST_SIZE : (mode == 1 ? g_eval_correct_total : (TEST_SIZE - g_eval_correct_total))
+    );
+    if (len > 0 && (size_t)len < remaining) {
+        p += len;
+        remaining -= (size_t)len;
+    }
+
+    int returned = 0;
+    for (int idx = 0; idx < TEST_SIZE; idx++) {
+        int include = 1;
+        if (mode == 1) include = g_correct_cache[idx] ? 1 : 0;
+        if (mode == 2) include = g_correct_cache[idx] ? 0 : 1;
+        if (!include) continue;
+        if (returned >= limit) break;
+
+        len = snprintf(p, remaining, "%s%d", returned > 0 ? "," : "", idx);
+        if (len > 0 && (size_t)len < remaining) {
+            p += len;
+            remaining -= (size_t)len;
+            returned++;
+        }
+    }
+
+    len = snprintf(p, remaining, "],\"returned\":%d}", returned);
+    if (len > 0 && (size_t)len < remaining) {
+        p += len;
+        remaining -= (size_t)len;
+    }
+
+    send_json_response(client_fd, buffer);
+    free(buffer);
 }
