@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <sys/time.h>
 
 #define PORT 3000
 #define BUFFER_SIZE 8192
@@ -187,6 +188,11 @@ extern void handle_api_eval(int client_fd);
 extern void handle_api_indices(int client_fd, const char* query);
 
 static void handle_request(int client_fd) {
+    struct timeval timeout;
+    timeout.tv_sec = 2;
+    timeout.tv_usec = 0;
+    setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+
     char buffer[BUFFER_SIZE];
     memset(buffer, 0, sizeof(buffer));
 

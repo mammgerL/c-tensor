@@ -305,7 +305,7 @@
 
         .lab-controls {
             display: grid;
-            grid-template-columns: 1.4fr auto auto;
+            grid-template-columns: 1.4fr auto auto auto auto auto;
             gap: 10px;
             align-items: center;
         }
@@ -328,6 +328,48 @@
             display: grid;
             grid-template-columns: repeat(5, minmax(0, 1fr));
             gap: 8px;
+        }
+
+        .calc-details {
+            margin-top: 12px;
+            border: 1px solid #d5e8db;
+            border-radius: 10px;
+            background: #f7fff9;
+            padding: 12px;
+        }
+
+        .detail-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 10px;
+        }
+
+        .detail-card {
+            border: 1px solid #d6e9dc;
+            border-radius: 8px;
+            padding: 10px;
+            background: white;
+        }
+
+        .detail-title {
+            font-size: 12px;
+            font-weight: 700;
+            color: #214437;
+            margin-bottom: 6px;
+        }
+
+        .mono {
+            font-family: "SF Mono", "Consolas", monospace;
+            font-size: 12px;
+            color: #2e4c40;
+            line-height: 1.5;
+            word-break: break-word;
+        }
+
+        .pending-hint {
+            font-size: 12px;
+            color: #6a7c70;
+            margin-bottom: 6px;
         }
 
         .step-card {
@@ -364,17 +406,318 @@
             color: #a53232;
         }
 
+        html,
+        body {
+            height: 100%;
+        }
+
+        body {
+            overflow: hidden;
+        }
+
+        .container {
+            max-width: none;
+            height: 100vh;
+            padding: 10px;
+            display: grid;
+            grid-template-rows: auto 1fr;
+            gap: 10px;
+            overflow: hidden;
+        }
+
+        .hero {
+            margin-bottom: 0;
+            padding: 12px 16px;
+            display: none;
+        }
+
+        .hero h1 {
+            font-size: clamp(20px, 2vw, 28px);
+            margin-bottom: 4px;
+        }
+
+        .hero p {
+            font-size: 13px;
+            line-height: 1.4;
+        }
+
+        .workspace {
+            min-height: 0;
+            display: grid;
+            gap: 10px;
+            grid-template-columns: 320px minmax(0, 1fr) 420px;
+            grid-template-rows: auto minmax(0, 1fr);
+        }
+
+        .panel {
+            padding: 12px;
+            border-radius: 12px;
+        }
+
+        .panel h2 {
+            margin-bottom: 8px;
+            font-size: 16px;
+        }
+
+        .panel-step {
+            grid-column: 1 / -1;
+            grid-row: 1;
+            display: grid;
+            min-height: 0;
+            grid-template-rows: auto auto auto auto auto;
+            gap: 8px;
+            overflow: hidden;
+        }
+
+        .panel-left {
+            grid-column: 1;
+            grid-row: 2;
+            display: grid;
+            grid-template-rows: auto auto auto auto minmax(0, 1fr);
+            min-height: 0;
+            gap: 8px;
+        }
+
+        .panel-center {
+            grid-column: 2;
+            grid-row: 2;
+            display: grid;
+            grid-template-rows: auto minmax(0, 1fr);
+            min-height: 0;
+            gap: 8px;
+        }
+
+        .panel-right {
+            grid-column: 3;
+            grid-row: 2;
+            display: grid;
+            grid-template-rows: auto minmax(0, 1fr);
+            min-height: 0;
+            gap: 8px;
+        }
+
+        .left-scroll,
+        .right-scroll {
+            min-height: 0;
+            overflow: auto;
+            padding-right: 4px;
+        }
+
+        .lab-controls {
+            grid-template-columns: minmax(220px, 1fr) 90px auto auto auto auto;
+        }
+
+        .step-meta {
+            margin-top: 0;
+            min-height: 24px;
+        }
+
+        .step-cards {
+            margin-top: 0;
+        }
+
+        .step-hint,
+        .flow-strip,
+        .goal-strip,
+        .step-cards {
+            display: none;
+        }
+
+        .calc-details {
+            margin-top: 8px;
+            min-height: 0;
+            max-height: 280px;
+            overflow: auto;
+        }
+
+        .network-diagram {
+            height: auto;
+            min-height: 0;
+            margin-top: 0;
+        }
+
+        .image-wrap {
+            margin: 0;
+        }
+
+        #imageCanvas {
+            width: 196px;
+            height: 196px;
+        }
+
+        .image-info {
+            margin-bottom: 0;
+            font-size: 13px;
+        }
+
+        .section-title {
+            margin-top: 10px;
+            margin-bottom: 6px;
+        }
+
+        .activation-grid {
+            gap: 1px;
+        }
+
+        .hidden-wrap {
+            max-height: 240px;
+            overflow: auto;
+            border: 1px solid #dcebe0;
+            border-radius: 8px;
+            padding: 6px;
+            background: #fbfffc;
+        }
+
+        .stats,
+        .class-stats,
+        .probabilities,
+        .contrib-list {
+            gap: 6px;
+        }
+
+        .step-hint {
+            font-size: 12px;
+            color: #5f7769;
+            margin: 0;
+        }
+
+        .step-hint code {
+            font-family: "SF Mono", "Consolas", monospace;
+            font-size: 11px;
+            background: #e7f3eb;
+            border: 1px solid #cfe3d5;
+            border-radius: 4px;
+            padding: 1px 4px;
+            color: #204c3b;
+        }
+
+        .flow-strip {
+            display: grid;
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+            gap: 8px;
+        }
+
+        .flow-node {
+            border: 1px solid #d6e9dc;
+            border-radius: 8px;
+            padding: 6px 8px;
+            background: #f8fffb;
+            color: #597266;
+            font-size: 12px;
+            line-height: 1.3;
+            transition: all 0.18s ease;
+        }
+
+        .flow-node .idx {
+            display: inline-block;
+            min-width: 18px;
+            text-align: center;
+            border-radius: 999px;
+            margin-right: 6px;
+            background: #e4efe7;
+            color: #446556;
+            font-weight: 700;
+        }
+
+        .flow-node.done {
+            border-color: #8ec1a9;
+            background: #ecf8f2;
+            color: #2a6450;
+        }
+
+        .flow-node.active {
+            border-color: #2f6ecf;
+            background: #e9f1ff;
+            color: #1f427d;
+            box-shadow: 0 4px 12px rgba(47, 110, 207, 0.18);
+        }
+
+        .goal-strip {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 8px;
+        }
+
+        .goal-item {
+            border: 1px dashed #cde2d3;
+            border-radius: 8px;
+            background: #f9fffb;
+            color: #60786b;
+            font-size: 12px;
+            padding: 6px 8px;
+            transition: all 0.18s ease;
+        }
+
+        .goal-item.done {
+            border-style: solid;
+            border-color: #76ba98;
+            background: #eaf9f1;
+            color: #215843;
+            font-weight: 600;
+        }
+
+        .panel-left,
+        .panel-center,
+        .panel-right {
+            transition: opacity 0.2s ease, transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .panel-focus {
+            border-color: #9dc9b2;
+            box-shadow: 0 10px 24px rgba(13, 57, 36, 0.16);
+        }
+
+        .panel-dim {
+            opacity: 0.52;
+            transform: scale(0.995);
+            filter: saturate(0.78);
+        }
+
+        @media (max-width: 1400px) {
+            .workspace {
+                grid-template-columns: 290px minmax(0, 1fr) 360px;
+            }
+        }
+
         @media (max-width: 1024px) {
-            .grid {
+            body {
+                overflow: auto;
+            }
+
+            .container {
+                height: auto;
+                overflow: visible;
+                grid-template-rows: auto;
+            }
+
+            .workspace {
                 grid-template-columns: 1fr;
+                grid-template-rows: auto;
+            }
+
+            .panel-step,
+            .panel-left,
+            .panel-center,
+            .panel-right {
+                grid-column: auto;
+                grid-row: auto;
             }
 
             .lab-controls {
-                grid-template-columns: 1fr;
+                grid-template-columns: 1fr 1fr;
             }
 
             .step-cards {
                 grid-template-columns: 1fr 1fr;
+            }
+
+            .detail-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .flow-strip,
+            .goal-strip {
+                grid-template-columns: 1fr;
             }
         }
     </style>
@@ -386,9 +729,34 @@
             <p>把一次前向推理拆成可播放步骤：输入像素、隐藏层激活、关键神经元贡献、输出概率与最终决策。</p>
         </section>
 
-        <section class="grid">
-            <div class="panel">
-                <h2>样本与网络状态</h2>
+        <section class="workspace">
+        <div class="panel panel-step">
+            <h2>学习过程播放（置顶）</h2>
+            <p class="step-hint">建议学习顺序：先单步执行观察每一步，再用自动播放形成整体直觉。快捷键：<code>↑/↓</code> 切步骤，<code>Space</code> 单步，<code>←/→</code> 切样本。</p>
+            <div class="lab-controls">
+                <label>
+                    当前步骤
+                    <input id="stepRange" type="range" min="0" max="4" value="0" step="1">
+                </label>
+                <label>
+                    速度
+                    <select id="speedSelect">
+                        <option value="2200">慢速</option>
+                        <option value="1500" selected>标准</option>
+                        <option value="900">快速</option>
+                    </select>
+                </label>
+                <button id="stepPrevBtn" class="btn-sub">◀ 上一步</button>
+                <button id="stepOnceBtn" class="btn-sub">单步执行</button>
+                <button id="stepNextBtn" class="btn-sub">下一步 ▶</button>
+                <button id="playBtn" class="btn-main">▶ 自动播放</button>
+            </div>
+            <div class="step-meta" id="stepMeta"></div>
+            <div class="step-cards" id="stepCards"></div>
+        </div>
+
+            <div class="panel panel-left">
+                <h2>1) 选择样本</h2>
                 <div class="controls">
                     <label>样本索引
                         <input type="number" id="indexInput" value="0" min="0" max="9999">
@@ -407,59 +775,48 @@
                     <button id="randomBtn" class="btn-main">随机样本</button>
                 </div>
                 <p class="filter-stats" id="filterStats">筛选统计加载中...</p>
+                <div class="left-scroll">
+                    <div class="image-wrap">
+                        <canvas id="imageCanvas" width="224" height="224"></canvas>
+                    </div>
 
-                <div class="image-wrap">
-                    <canvas id="imageCanvas" width="224" height="224"></canvas>
+                    <div class="image-info" id="labelDisplay"></div>
+                    <div class="image-info" id="detailDisplay"></div>
+
+                    <div class="section-title">整体评估</div>
+                    <div id="stats" class="stats"></div>
+
+                    <div class="section-title">各数字准确率</div>
+                    <div id="classStats" class="class-stats"></div>
                 </div>
+            </div>
 
-                <div class="image-info" id="labelDisplay"></div>
-                <div class="image-info" id="detailDisplay"></div>
-
+            <div class="panel panel-center">
+                <h2>2) 观察网络流动</h2>
                 <div class="network-diagram">
                     <svg id="network-svg"></svg>
                     <div class="activation-tooltip" id="tooltip"></div>
                 </div>
             </div>
 
-            <div class="panel">
-                <h2>输出分布与隐藏层解释</h2>
+            <div class="panel panel-right">
+                <h2>3) 输出与解释</h2>
+                <div class="right-scroll">
+                    <div class="section-title">输出概率</div>
+                    <div id="probabilities" class="probabilities"></div>
 
-                <div class="section-title">输出概率</div>
-                <div id="probabilities" class="probabilities"></div>
+                    <div class="section-title">关键隐藏神经元贡献</div>
+                    <div id="contributors" class="contrib-list"></div>
 
-                <div class="section-title">关键隐藏神经元贡献</div>
-                <div id="contributors" class="contrib-list"></div>
+                    <div class="section-title">详细计算过程</div>
+                    <div class="calc-details" id="calcDetails"></div>
 
-                <div class="section-title">隐藏层激活热力图 (256)</div>
-                <div id="hiddenActivations" class="activation-grid"></div>
-
-                <div class="section-title">整体评估</div>
-                <div id="stats" class="stats"></div>
-
-                <div class="section-title">各数字准确率</div>
-                <div id="classStats" class="class-stats"></div>
+                    <div class="section-title">隐藏层激活热力图 (256)</div>
+                    <div class="hidden-wrap">
+                        <div id="hiddenActivations" class="activation-grid"></div>
+                    </div>
+                </div>
             </div>
-        </section>
-
-        <section class="panel">
-            <h2>学习过程播放</h2>
-            <div class="lab-controls">
-                <label>
-                    当前步骤
-                    <input id="stepRange" type="range" min="0" max="4" value="0" step="1">
-                </label>
-                <label>
-                    速度
-                    <select id="speedSelect">
-                        <option value="2200">慢速</option>
-                        <option value="1500" selected>标准</option>
-                        <option value="900">快速</option>
-                    </select>
-                </label>
-                <button id="playBtn" class="btn-main">▶ 自动播放</button>
-            </div>
-            <div class="step-meta" id="stepMeta"></div>
-            <div class="step-cards" id="stepCards"></div>
         </section>
     </div>
 
@@ -470,6 +827,18 @@
             { title: '贡献归因', brief: '挑出对预测类别贡献最大的隐藏神经元。' },
             { title: '输出竞争', brief: '隐藏层线性映射到 10 类，再 softmax。' },
             { title: '最终判断', brief: '比较 top1 / top2，形成置信度与 margin。' }
+        ];
+        const FLOW_LABELS = [
+            'x: 输入向量',
+            'xW1+b1',
+            '贡献拆解',
+            'hW2+b2 → softmax',
+            'argmax / margin'
+        ];
+        const LEARN_GOALS = [
+            { title: '看懂输入编码', doneAt: 0 },
+            { title: '理解隐藏层贡献', doneAt: 2 },
+            { title: '会解释最终决策', doneAt: 4 }
         ];
 
         let architecture = null;
@@ -517,7 +886,6 @@
             const canvas = document.getElementById('imageCanvas');
             const ctx = canvas.getContext('2d');
             const size = 28;
-            const scale = 8;
 
             ctx.fillStyle = 'white';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -538,13 +906,22 @@
             temp.getContext('2d').putImageData(imageData, 0, 0);
 
             ctx.imageSmoothingEnabled = false;
-            ctx.drawImage(temp, 8, 8, size * scale, size * scale);
+            ctx.drawImage(temp, 0, 0, canvas.width, canvas.height);
         }
 
-        function displayLabels(data) {
+        function displayLabels(data, step) {
             const labelDiv = document.getElementById('labelDisplay');
             const detailDiv = document.getElementById('detailDisplay');
             const ok = data.correct;
+
+            if (step < 4) {
+                labelDiv.innerHTML = `
+                    真实标签 <strong>${data.true_label}</strong> ｜ 预测标签 <strong>待执行</strong><br>
+                    <span style="color:#6a7c70;font-weight:700;">继续单步执行，直到最终判断阶段</span>
+                `;
+                detailDiv.innerHTML = `当前在步骤 ${step + 1}/5：${STEP_DEFS[step].title}`;
+                return;
+            }
 
             labelDiv.innerHTML = `
                 真实标签 <strong>${data.true_label}</strong> ｜ 预测标签 <strong>${data.predicted}</strong><br>
@@ -560,7 +937,20 @@
             `;
         }
 
-        function displayProbabilities(data) {
+        function displayProbabilities(data, step) {
+            const container = document.getElementById('probabilities');
+            if (step < 3) {
+                const lockedRows = Array.from({ length: 5 }, (_, digit) => `
+                    <div class="prob-row">
+                        <div>${digit}</div>
+                        <div class="track"><div class="fill" style="width:0%"></div></div>
+                        <div>--</div>
+                    </div>
+                `).join('');
+                container.innerHTML = `<div class="pending-hint">执行到步骤 4 后展示 softmax 概率分布。</div>${lockedRows}`;
+                return;
+            }
+
             const probs = (data.probabilities || data.output.map(v => Math.exp(v))).map((p, digit) => ({
                 digit,
                 prob: p
@@ -569,7 +959,6 @@
             if (sum > 0) probs.forEach(item => item.prob /= sum);
             probs.sort((a, b) => b.prob - a.prob);
 
-            const container = document.getElementById('probabilities');
             container.innerHTML = probs.map((item) => {
                 const cls = item.digit === data.predicted ? 'pred' : (item.digit === data.runner_up ? 'runner' : '');
                 return `
@@ -582,11 +971,16 @@
             }).join('');
         }
 
-        function displayHiddenActivations(data) {
+        function displayHiddenActivations(data, step) {
             const hidden = data.hidden || [];
+            const container = document.getElementById('hiddenActivations');
+            if (step < 1) {
+                container.innerHTML = '<div class="pending-hint" style="grid-column:1 / -1;">执行到步骤 2 后显示 256 维隐藏层激活热力图。</div>';
+                return;
+            }
+
             const topSet = new Set((data.learning?.top_contributors || []).map(t => t.hidden_index));
             const maxAbs = Math.max(...hidden.map(v => Math.abs(v)), 1e-6);
-            const container = document.getElementById('hiddenActivations');
 
             container.innerHTML = hidden.map((value, idx) => {
                 const intensity = Math.min(1, Math.abs(value) / maxAbs);
@@ -595,10 +989,15 @@
             }).join('');
         }
 
-        function displayContributors(data) {
+        function displayContributors(data, step) {
+            const container = document.getElementById('contributors');
+            if (step < 2) {
+                container.innerHTML = '<div class="pending-hint">执行到步骤 3 后展示关键隐藏神经元贡献。</div>';
+                return;
+            }
+
             const contributors = data.learning?.top_contributors || [];
             const maxAbs = Math.max(...contributors.map(c => Math.abs(c.contribution)), 1e-6);
-            const container = document.getElementById('contributors');
 
             if (contributors.length === 0) {
                 container.innerHTML = '<div style="font-size:13px;color:#6a7c70;">当前样本无可解释贡献数据。</div>';
@@ -637,6 +1036,87 @@
                     <div>${item.accuracy.toFixed(1)}%</div>
                 </div>
             `).join('');
+        }
+
+        function renderCalculationDetails(data, step) {
+            const panel = document.getElementById('calcDetails');
+            if (!panel || !data) return;
+
+            const probs = (data.probabilities || data.output.map(v => Math.exp(v))).map((p, digit) => ({ digit, prob: p }));
+            const probSum = probs.reduce((acc, item) => acc + item.prob, 0) || 1;
+            probs.forEach(item => { item.prob /= probSum; });
+            const topProbs = probs.slice().sort((a, b) => b.prob - a.prob).slice(0, 3);
+
+            const samplePixels = [0, 27, 196, 392, 783]
+                .map(i => `x[${i}]=${data.pixels[i].toFixed(4)}`)
+                .join(' , ');
+            const topHidden = data.hidden
+                .map((v, i) => ({ i, v, abs: Math.abs(v) }))
+                .sort((a, b) => b.abs - a.abs)
+                .slice(0, 5)
+                .map(item => `h${item.i}=${item.v.toFixed(4)}`)
+                .join(' , ');
+            const contribLines = (data.learning?.top_contributors || [])
+                .slice(0, 5)
+                .map(c => `h${c.hidden_index}: ${c.activation.toFixed(4)} × ${c.weight_to_pred.toFixed(4)} = ${c.contribution.toFixed(4)}`)
+                .join('<br>');
+            const logitsLine = (data.logits || [])
+                .slice(0, 10)
+                .map((v, i) => `z${i}=${v.toFixed(4)}`)
+                .join(' , ');
+
+            const formulaByStep = [
+                'x ∈ R^784',
+                'h = ReLU(x·W1 + b1)',
+                'score_pred = Σ(h_i × W2[i,pred]) + b2[pred]',
+                'p_k = exp(z_k) / Σ_j exp(z_j)',
+                'y_hat = argmax(p),  margin = p_top1 - p_top2'
+            ];
+
+            const detailByStep = [
+                `输入向量示例：${samplePixels}`,
+                `隐藏层高激活示例：${topHidden}`,
+                contribLines || '暂无贡献分解数据',
+                `logits: ${logitsLine}`,
+                `top1=${data.predicted}(${(probs[data.predicted].prob * 100).toFixed(2)}%), top2=${data.runner_up}(${(probs[data.runner_up].prob * 100).toFixed(2)}%), margin=${(data.margin * 100).toFixed(2)}%`
+            ];
+
+            const explainByStep = [
+                '先把 28×28 图像展平为 784 维向量，后续矩阵计算都基于这个输入。',
+                '第一层完成线性变换并过 ReLU，得到稀疏激活的隐藏特征。',
+                '从隐藏层中挑出对当前预测类别贡献最大的神经元，解释“为什么会判成这个数字”。',
+                '把隐藏特征映射到 10 个类别的 logits，再通过 softmax 归一化成概率。',
+                '比较前两名概率差值，得到最终预测与置信边际。'
+            ];
+
+            panel.innerHTML = `
+                <div class="detail-grid">
+                    <div class="detail-card">
+                        <div class="detail-title">当前公式</div>
+                        <div class="mono">${formulaByStep[step]}</div>
+                    </div>
+                    <div class="detail-card">
+                        <div class="detail-title">详细计算过程</div>
+                        <div class="mono">${detailByStep[step]}</div>
+                    </div>
+                    <div class="detail-card">
+                        <div class="detail-title">步骤解释</div>
+                        <div class="mono">${explainByStep[step]}<br><br>Top3 概率：${topProbs.map(p => `${p.digit}:${(p.prob * 100).toFixed(2)}%`).join(' , ')}</div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function updateLinkedViews() {
+            if (!currentData) return;
+            displayLabels(currentData, currentStep);
+            displayProbabilities(currentData, currentStep);
+            displayContributors(currentData, currentStep);
+            displayHiddenActivations(currentData, currentStep);
+            drawNetwork(currentData, currentStep);
+            updateStepMeta();
+            renderCalculationDetails(currentData, currentStep);
+            updatePanelFocus(currentStep);
         }
 
         function drawNetwork(data, step) {
@@ -795,6 +1275,46 @@
             }).join('');
         }
 
+        function renderFlowStrip() {
+            const box = document.getElementById('flowStrip');
+            if (!box) return;
+            box.innerHTML = FLOW_LABELS.map((label, idx) => {
+                const cls = idx === currentStep ? 'active' : (idx < currentStep ? 'done' : '');
+                return `<div class="flow-node ${cls}"><span class="idx">${idx + 1}</span>${label}</div>`;
+            }).join('');
+        }
+
+        function renderGoalStrip() {
+            const box = document.getElementById('goalStrip');
+            if (!box) return;
+            box.innerHTML = LEARN_GOALS.map(goal => {
+                const done = currentStep >= goal.doneAt;
+                return `<div class="goal-item ${done ? 'done' : ''}">${done ? '✓' : '○'} ${goal.title}</div>`;
+            }).join('');
+        }
+
+        function updatePanelFocus(step) {
+            const left = document.querySelector('.panel-left');
+            const center = document.querySelector('.panel-center');
+            const right = document.querySelector('.panel-right');
+            if (!left || !center || !right) return;
+
+            const panels = [left, center, right];
+            panels.forEach(panel => panel.classList.remove('panel-focus', 'panel-dim'));
+
+            let focus = [];
+            if (step === 0) focus = [left];
+            else if (step === 1) focus = [center];
+            else if (step === 2) focus = [center, right];
+            else if (step === 3) focus = [right, center];
+            else focus = [left, right];
+
+            panels.forEach(panel => {
+                if (focus.includes(panel)) panel.classList.add('panel-focus');
+                else panel.classList.add('panel-dim');
+            });
+        }
+
         function updateStepMeta() {
             const meta = document.getElementById('stepMeta');
             if (!currentData) {
@@ -824,8 +1344,14 @@
             currentStep = clamp(next, 0, STEP_DEFS.length - 1);
             document.getElementById('stepRange').value = String(currentStep);
             renderStepCards();
-            updateStepMeta();
-            if (currentData) drawNetwork(currentData, currentStep);
+            renderFlowStrip();
+            renderGoalStrip();
+            updateLinkedViews();
+        }
+
+        function runSingleStep() {
+            if (currentStep >= STEP_DEFS.length - 1) return;
+            setStep(currentStep + 1);
         }
 
         function stopAutoPlay(resetLabel = true) {
@@ -889,12 +1415,8 @@
             currentData = data;
 
             drawImage(data.pixels);
-            displayLabels(data);
-            displayProbabilities(data);
-            displayContributors(data);
-            displayHiddenActivations(data);
-            drawNetwork(data, currentStep);
-            updateStepMeta();
+            stopAutoPlay(true);
+            setStep(0);
 
             const pos = filteredIndices.indexOf(currentIndex);
             if (filteredIndices.length > 0) {
@@ -951,6 +1473,19 @@
                 setStep(parseInt(e.target.value, 10) || 0);
             });
 
+            document.getElementById('stepPrevBtn').addEventListener('click', () => {
+                stopAutoPlay(true);
+                setStep(currentStep - 1);
+            });
+            document.getElementById('stepOnceBtn').addEventListener('click', () => {
+                stopAutoPlay(true);
+                runSingleStep();
+            });
+            document.getElementById('stepNextBtn').addEventListener('click', () => {
+                stopAutoPlay(true);
+                setStep(currentStep + 1);
+            });
+
             document.getElementById('playBtn').addEventListener('click', toggleAutoPlay);
             document.getElementById('speedSelect').addEventListener('change', () => {
                 if (autoTimer) {
@@ -962,6 +1497,21 @@
             window.addEventListener('keydown', (e) => {
                 if (e.key === 'ArrowLeft') moveSample(-1);
                 if (e.key === 'ArrowRight') moveSample(1);
+                if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    stopAutoPlay(true);
+                    setStep(currentStep - 1);
+                }
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    stopAutoPlay(true);
+                    setStep(currentStep + 1);
+                }
+                if (e.key === ' ') {
+                    e.preventDefault();
+                    stopAutoPlay(true);
+                    runSingleStep();
+                }
             });
         }
 
@@ -969,6 +1519,8 @@
             try {
                 architecture = await fetchJSON('/api/architecture');
                 renderStepCards();
+                renderFlowStrip();
+                renderGoalStrip();
                 setStep(0);
                 bindEvents();
                 await Promise.all([loadStats(), loadFilterIndices('all')]);
