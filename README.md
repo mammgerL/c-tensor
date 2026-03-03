@@ -195,12 +195,12 @@ void kaiming_uniform_(Arr *arr, int fan_in);
 
 在 Apple Silicon (M 系列芯片) 上的性能对比：
 
-| 指标 | Apple Accelerate | OpenMP | ANE 实验路径 |
-|------|------------------|--------|--------------|
-| **总训练时间** | **6.24 秒** | 163.00 秒 | 248.14 秒 |
-| **平均每步耗时** | **0.31 ms** | 8.15 ms | 12.41 ms |
-| **测试准确率** | 95.66% | 95.66% | 95.66% |
-| **相对 Accelerate** | 基准 | 约 26x 慢 | 约 40x 慢 |
+| 指标 | Apple Accelerate | OpenMP | ANE（静态权重路径） | ANE（动态权重路径） |
+|------|------------------|--------|---------------------|---------------------|
+| **总训练时间** | **6.24 秒** | 163.00 秒 | 248.14 秒 | 8.08 秒 |
+| **平均每步耗时** | **0.31 ms** | 8.15 ms | 12.41 ms | 0.40 ms |
+| **测试准确率** | 95.66% | 95.66% | 95.66% | 95.67% |
+| **相对 Accelerate** | 基准 | 约 26x 慢 | 约 40x 慢 | 约 1.30x 慢 |
 
 > 测试环境：macOS, Apple Silicon, 20,000 训练步，批大小 128。ANE 为实验私有 API 路径（第一层前向在 ANE，反向仍在 CPU）。
 
@@ -209,7 +209,8 @@ void kaiming_uniform_(Arr *arr, int fan_in);
 - **macOS 强烈推荐使用 Accelerate**（默认选项）
 - Accelerate 使用 vDSP/BLAS 高度优化的向量化矩阵运算，针对 Apple Silicon 深度优化
 - OpenMP 版本适合 Linux 环境或需要跨平台一致性的场景
-- 当前 ANE 实验路径可跑通训练，但在本项目形态下没有速度优势，主要用于技术验证
+- ANE 静态权重路径可跑通训练，但会因重复编译导致明显变慢
+- ANE 动态权重路径（`ANE_DYNAMIC_WEIGHTS=1`）已避免每步重编译，速度接近 Accelerate，但当前仍未超过 Accelerate
 
 ## 性能优化
 
@@ -233,6 +234,9 @@ make train-ane
 # 运行 ANE 模式（第一层 dense 前向走 ANE，反向仍在 CPU）
 ANE_ENABLE_PRIVATE_API=1 TENSOR_USE_ANE=1 ./train_ane
 
+# 运行推荐的动态权重模式（避免每步重编译）
+ANE_ENABLE_PRIVATE_API=1 ANE_DYNAMIC_WEIGHTS=1 TENSOR_USE_ANE=1 ./train_ane
+
 # 可选：缩短训练用于验证
 ANE_ENABLE_PRIVATE_API=1 TENSOR_USE_ANE=1 TRAIN_STEPS=300 ./train_ane
 ```
@@ -240,6 +244,7 @@ ANE_ENABLE_PRIVATE_API=1 TENSOR_USE_ANE=1 TRAIN_STEPS=300 ./train_ane
 可用环境变量：
 - `TENSOR_USE_ANE=1`：启用训练循环中的 ANE 路径
 - `ANE_ENABLE_PRIVATE_API=1`：启用私有 ANE API 探测与调用
+- `ANE_DYNAMIC_WEIGHTS=1`：启用动态权重路径（推荐；避免每步重编译）
 - `TRAIN_STEPS` / `TRAIN_BATCH` / `TRAIN_LR`：覆盖默认训练参数
 
 ### 使用 OpenMP 编译（macOS）

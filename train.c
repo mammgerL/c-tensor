@@ -369,6 +369,17 @@ int main() {
     double elapsed = (end.tv_sec - start.tv_sec) + (end.tv_usec - start.tv_usec) / 1e6;
     printf("Elapsed Time: %.6f seconds\n", elapsed);
 
+#if USE_ANE_RUNTIME
+    if (use_ane) {
+        int compile_count = 0;
+        int cache_hit_count = 0;
+        int fallback_count = 0;
+        ane_backend_get_stats(&compile_count, &cache_hit_count, &fallback_count);
+        printf("ANE stats: compile=%d cache_hit=%d fallback=%d\n",
+            compile_count, cache_hit_count, fallback_count);
+    }
+#endif
+
     save_model("mnist_mlp.bin", w1, b1, w2, b2);
     printf("Saved model to mnist_mlp.bin\n");
 

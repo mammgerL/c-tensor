@@ -102,12 +102,32 @@ ANE_ENABLE_PRIVATE_API=1 TENSOR_USE_ANE=1 TRAIN_STEPS=20000 ./train_ane
 - ANE eval accuracy: `95.66% (9566/10000)`
 - Relative train speed: ANE path is about `39.8x` slower than Accelerate baseline.
 
+8. Dynamic-weight fix and rerun (in this repo)
+```bash
+# key fix: dynamic descriptor uses empty weight map (@{}) instead of nil
+ANE_ENABLE_PRIVATE_API=1 ANE_DYNAMIC_WEIGHTS=1 ./ane_poc 128 20
+
+# full train/eval
+ANE_ENABLE_PRIVATE_API=1 ANE_DYNAMIC_WEIGHTS=1 TENSOR_USE_ANE=1 TRAIN_STEPS=20000 ./train_ane
+./eval
+```
+- `ane_poc` dynamic result:
+  - `compile=1 cache_hit=39 fallback=0`
+  - ANE forward path works with dynamic weights.
+- Full 20k dynamic run:
+  - train elapsed: `8.082938s`
+  - avg step near end: `~0.403 ms`
+  - ANE stats: `compile=1 cache_hit=19999 fallback=0`
+  - eval accuracy: `95.67% (9567/10000)`
+- Relative speed vs Accelerate baseline (`6.238239s`):
+  - dynamic ANE path is about `1.30x` slower.
+
 ## Current decision
 
-- Keep current default ANE path as the stable experimental baseline:
-  - baked-weight ANE compile per weight snapshot
-  - CPU fallback always available
-- Continue implementing dynamic-weight path in a separate step before training-loop integration.
+- Keep ANE path experimental and opt-in only.
+- Prefer dynamic-weight mode for experiments:
+  - `ANE_ENABLE_PRIVATE_API=1 ANE_DYNAMIC_WEIGHTS=1 TENSOR_USE_ANE=1`
+- Default production recommendation remains Accelerate on macOS.
 
 ## Next process (short)
 

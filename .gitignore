@@ -2,6 +2,7 @@
 train
 eval
 train_ane
+ane_poc
 
 #数据
 data/

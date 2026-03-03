@@ -184,7 +184,18 @@ static void ane_free_kernel(AnekernelCacheEntry* k) {
 
     free(k->in_cf);
     free(k->out_cf);
-    memset(k, 0, sizeof(*k));
+    k->used = 0;
+    k->batch = 0;
+    k->in_dim = 0;
+    k->out_dim = 0;
+    k->weight_hash = 0ULL;
+    k->model = nil;
+    k->request = nil;
+    k->in_surface = NULL;
+    k->out_surface = NULL;
+    k->tmp_dir = nil;
+    k->in_cf = NULL;
+    k->out_cf = NULL;
 }
 
 static int ane_find_kernel_slot(int batch, int in_dim, int out_dim, uint64_t weight_hash) {
@@ -223,6 +234,9 @@ static int ane_prepare_runtime_entry(
         wdict = @{
             @"@model_path/weights/weight.bin": @{@"offset": @0, @"data": weight_data}
         };
+    } else {
+        // Dynamic matmul path does not use baked constants, but descriptor creation expects a map.
+        wdict = @{};
     }
 
     id desc = ((id(*)(Class, SEL, id, id, id))objc_msgSend)(
