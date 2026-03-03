@@ -147,6 +147,14 @@ int main(int argc, char** argv) {
     printf("baseline (tensor ops) avg: %.4f ms/iter\n", baseline_ms);
     printf("ane api path avg:          %.4f ms/iter\n", ane_ms);
     printf("max abs diff: %.8f\n", diff);
+    {
+        int compile_count = 0;
+        int cache_hit_count = 0;
+        int fallback_count = 0;
+        ane_backend_get_stats(&compile_count, &cache_hit_count, &fallback_count);
+        printf("ane stats: compile=%d cache_hit=%d fallback=%d\n",
+            compile_count, cache_hit_count, fallback_count);
+    }
 
     free(baseline_out);
     free(ane_out);

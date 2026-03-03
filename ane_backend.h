@@ -6,6 +6,7 @@
 
 int ane_backend_is_available(void);
 const char* ane_backend_last_error(void);
+void ane_backend_get_stats(int* compile_count, int* cache_hit_count, int* fallback_count);
 
 /*
  Fused forward op for M1 PoC:

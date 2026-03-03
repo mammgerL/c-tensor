@@ -1,6 +1,7 @@
 #include "ane_backend.h"
 #include <Accelerate/Accelerate.h>
 #include <dlfcn.h>
+#include <objc/runtime.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -9,6 +10,58 @@ static char g_last_error[256] = "ANE backend not initialized";
 static int g_checked = 0;
 static int g_private_framework_found = 0;
 static int g_opt_in = 0;
+static int g_runtime_ready = 0;
+static int g_compile_count = 0;
+static int g_cache_hit_count = 0;
+static int g_fallback_count = 0;
+
+typedef struct {
+    int used;
+    int batch;
+    int in_dim;
+    int out_dim;
+} AnekernelCacheEntry;
+
+#define ANE_KERNEL_CACHE_SIZE 16
+static AnekernelCacheEntry g_kernel_cache[ANE_KERNEL_CACHE_SIZE];
+
+static Class g_ane_client_cls = Nil;
+static Class g_ane_compiler_cls = Nil;
+
+static int ane_find_cache_slot(int batch, int in_dim, int out_dim) {
+    for (int i = 0; i < ANE_KERNEL_CACHE_SIZE; i++) {
+        if (g_kernel_cache[i].used &&
+            g_kernel_cache[i].batch == batch &&
+            g_kernel_cache[i].in_dim == in_dim &&
+            g_kernel_cache[i].out_dim == out_dim) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+static int ane_reserve_cache_slot(int batch, int in_dim, int out_dim) {
+    for (int i = 0; i < ANE_KERNEL_CACHE_SIZE; i++) {
+        if (!g_kernel_cache[i].used) {
+            g_kernel_cache[i].used = 1;
+            g_kernel_cache[i].batch = batch;
+            g_kernel_cache[i].in_dim = in_dim;
+            g_kernel_cache[i].out_dim = out_dim;
+            return i;
+        }
+    }
+    return -1;
+}
+
+static void ane_try_bind_runtime(void) {
+    g_ane_client_cls = objc_getClass("_ANEClient");
+    g_ane_compiler_cls = objc_getClass("_ANECompiler");
+    if (g_ane_client_cls && g_ane_compiler_cls) {
+        g_runtime_ready = 1;
+    } else {
+        g_runtime_ready = 0;
+    }
+}
 
 static void ane_probe_once(void) {
     if (g_checked) return;
@@ -28,9 +81,15 @@ static void ane_probe_once(void) {
     );
     if (h) {
         g_private_framework_found = 1;
+        ane_try_bind_runtime();
         dlclose(h);
-        snprintf(g_last_error, sizeof(g_last_error),
-            "private ANE framework detected; execution path not implemented yet");
+        if (g_runtime_ready) {
+            snprintf(g_last_error, sizeof(g_last_error),
+                "private ANE framework detected and classes resolved; execution bridge not implemented");
+        } else {
+            snprintf(g_last_error, sizeof(g_last_error),
+                "private ANE framework detected but class binding failed");
+        }
     } else {
         snprintf(g_last_error, sizeof(g_last_error),
             "private ANE framework not found");
@@ -67,12 +126,18 @@ static void cpu_dense_relu_cblas(
 
 int ane_backend_is_available(void) {
     ane_probe_once();
-    return g_opt_in && g_private_framework_found;
+    return g_opt_in && g_private_framework_found && g_runtime_ready;
 }
 
 const char* ane_backend_last_error(void) {
     ane_probe_once();
     return g_last_error;
+}
+
+void ane_backend_get_stats(int* compile_count, int* cache_hit_count, int* fallback_count) {
+    if (compile_count) *compile_count = g_compile_count;
+    if (cache_hit_count) *cache_hit_count = g_cache_hit_count;
+    if (fallback_count) *fallback_count = g_fallback_count;
 }
 
 int ane_dense_relu_forward(
@@ -96,11 +161,21 @@ int ane_dense_relu_forward(
      ANE path is intentionally unimplemented in mainline.
      This keeps the integration points stable while preserving correctness.
     */
-    cpu_dense_relu_cblas(x, w, b, out, batch, in_dim, out_dim);
+    if (ane_find_cache_slot(batch, in_dim, out_dim) >= 0) {
+        g_cache_hit_count++;
+    } else if (ane_reserve_cache_slot(batch, in_dim, out_dim) >= 0) {
+        g_compile_count++;
+    }
 
-    if (g_opt_in && g_private_framework_found) {
+    cpu_dense_relu_cblas(x, w, b, out, batch, in_dim, out_dim);
+    g_fallback_count++;
+
+    if (g_opt_in && g_private_framework_found && g_runtime_ready) {
         snprintf(g_last_error, sizeof(g_last_error),
             "private ANE framework detected but runtime bridge is not implemented; used CPU fallback");
+    } else if (g_opt_in && g_private_framework_found && !g_runtime_ready) {
+        snprintf(g_last_error, sizeof(g_last_error),
+            "private ANE framework found but _ANEClient/_ANECompiler classes unavailable; used CPU fallback");
     } else {
         snprintf(g_last_error, sizeof(g_last_error),
             "ANE unavailable: used CPU fallback");

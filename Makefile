@@ -44,7 +44,7 @@ web: web_server.c api_handlers.c tensor.h
 
 # 编译 ANE M1 PoC（实验分支，不进入默认 all）
 ane-poc: ane_poc.c ane_backend.h ane_backend.m tensor.h
-	$(CC) $(CFLAGS) -o ane_poc ane_poc.c ane_backend.m $(LDFLAGS)
+	$(CC) $(CFLAGS) -o ane_poc ane_poc.c ane_backend.m $(LDFLAGS) -lobjc
 
 # OpenMP 版本编译 (macOS 上使用 libomp)
 openmp: clean
