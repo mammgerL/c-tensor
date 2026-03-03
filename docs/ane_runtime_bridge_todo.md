@@ -21,6 +21,8 @@ This file tracks what is still missing for real ANE execution in `ane_backend.m`
   - dynamic mode (`ANE_DYNAMIC_WEIGHTS=1`): descriptor issue fixed, path now runs
     - one-time compile + high cache-hit in repeated eval
     - full 20k training is functional and near Accelerate speed
+    - current stable path keeps `+bias + relu` on CPU (single-input runtime graph)
+    - two-input fused bias/relu graph compiles but hits runtime inference error on this machine
   - CPU fallback remains active and is used on any ANE failure
   - cache/compile/fallback counters are exposed by `ane_backend_get_stats()`
 

@@ -37,8 +37,6 @@ typedef struct {
     IOSurfaceRef in_surface;
     IOSurfaceRef out_surface;
     NSString* tmp_dir;
-    float* in_cf;
-    float* out_cf;
 } AnekernelCacheEntry;
 
 #define ANE_KERNEL_CACHE_SIZE 4
@@ -182,8 +180,6 @@ static void ane_free_kernel(AnekernelCacheEntry* k) {
         [[NSFileManager defaultManager] removeItemAtPath:k->tmp_dir error:nil];
     }
 
-    free(k->in_cf);
-    free(k->out_cf);
     k->used = 0;
     k->batch = 0;
     k->in_dim = 0;
@@ -194,8 +190,6 @@ static void ane_free_kernel(AnekernelCacheEntry* k) {
     k->in_surface = NULL;
     k->out_surface = NULL;
     k->tmp_dir = nil;
-    k->in_cf = NULL;
-    k->out_cf = NULL;
 }
 
 static int ane_find_kernel_slot(int batch, int in_dim, int out_dim, uint64_t weight_hash) {
@@ -316,16 +310,6 @@ static int ane_prepare_runtime_entry(
         return 0;
     }
 
-    float* in_cf = (float*)malloc(in_bytes);
-    float* out_cf = (float*)malloc(out_bytes);
-    if (!in_cf || !out_cf) {
-        free(in_cf);
-        free(out_cf);
-        set_last_error("failed to allocate ANE reorder buffers");
-        [fm removeItemAtPath:td error:nil];
-        return 0;
-    }
-
     k->used = 1;
     k->batch = batch;
     k->in_dim = in_dim;
@@ -336,8 +320,6 @@ static int ane_prepare_runtime_entry(
     k->in_surface = in_surface;
     k->out_surface = out_surface;
     k->tmp_dir = td;
-    k->in_cf = in_cf;
-    k->out_cf = out_cf;
     return 1;
 }
 
@@ -387,32 +369,28 @@ static int ane_eval_dense(
     int in_dim = k->in_dim;
     int out_dim = k->out_dim;
 
+    IOSurfaceLock(k->in_surface, 0, NULL);
+    float* in_base = (float*)IOSurfaceGetBaseAddress(k->in_surface);
     if (g_dynamic_mode) {
         int sp = batch + out_dim;
         for (int c = 0; c < in_dim; c++) {
             for (int s = 0; s < batch; s++) {
-                k->in_cf[(size_t)c * sp + s] = x_rowmajor[(size_t)s * in_dim + c];
+                in_base[(size_t)c * sp + s] = x_rowmajor[(size_t)s * in_dim + c];
             }
-            for (int o = 0; o < out_dim; o++) {
-                k->in_cf[(size_t)c * sp + batch + o] = w_rowmajor[(size_t)c * out_dim + o];
-            }
+            memcpy(
+                in_base + (size_t)c * sp + batch,
+                w_rowmajor + (size_t)c * out_dim,
+                (size_t)out_dim * sizeof(float)
+            );
         }
     } else {
         for (int s = 0; s < batch; s++) {
             const float* xr = x_rowmajor + (size_t)s * in_dim;
             for (int c = 0; c < in_dim; c++) {
-                k->in_cf[(size_t)c * batch + s] = xr[c];
+                in_base[(size_t)c * batch + s] = xr[c];
             }
         }
     }
-
-    size_t in_bytes = g_dynamic_mode
-        ? (size_t)in_dim * (batch + out_dim) * sizeof(float)
-        : (size_t)batch * in_dim * sizeof(float);
-    size_t out_bytes = (size_t)batch * out_dim * sizeof(float);
-
-    IOSurfaceLock(k->in_surface, 0, NULL);
-    memcpy(IOSurfaceGetBaseAddress(k->in_surface), k->in_cf, in_bytes);
     IOSurfaceUnlock(k->in_surface, 0, NULL);
 
     NSError* e = nil;
@@ -425,16 +403,15 @@ static int ane_eval_dense(
     }
 
     IOSurfaceLock(k->out_surface, kIOSurfaceLockReadOnly, NULL);
-    memcpy(k->out_cf, IOSurfaceGetBaseAddress(k->out_surface), out_bytes);
-    IOSurfaceUnlock(k->out_surface, kIOSurfaceLockReadOnly, NULL);
-
+    float* out_cf = (float*)IOSurfaceGetBaseAddress(k->out_surface);
     for (int s = 0; s < batch; s++) {
         float* o = out_rowmajor + (size_t)s * out_dim;
         for (int c = 0; c < out_dim; c++) {
-            float v = k->out_cf[(size_t)c * batch + s] + b[c];
+            float v = out_cf[(size_t)c * batch + s] + b[c];
             o[c] = (v > 0.0f) ? v : 0.0f;
         }
     }
+    IOSurfaceUnlock(k->out_surface, kIOSurfaceLockReadOnly, NULL);
 
     return 1;
 }

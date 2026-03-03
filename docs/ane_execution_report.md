@@ -122,6 +122,23 @@ ANE_ENABLE_PRIVATE_API=1 ANE_DYNAMIC_WEIGHTS=1 TENSOR_USE_ANE=1 TRAIN_STEPS=2000
 - Relative speed vs Accelerate baseline (`6.238239s`):
   - dynamic ANE path is about `1.30x` slower.
 
+9. Incremental optimization comparison (dynamic path)
+```bash
+ANE_ENABLE_PRIVATE_API=1 ANE_DYNAMIC_WEIGHTS=1 TENSOR_USE_ANE=1 TRAIN_STEPS=20000 ./train_ane
+./eval
+```
+- Baseline dynamic path (before this round): `8.082938s`, acc `95.67%`
+- Step1 (remove intermediate reorder/copy buffers, direct IOSurface write/read):
+  - `7.798082s`, acc `95.67%`
+- Step2 attempt (fuse bias+relu into ANE graph with second input):
+  - runtime regression, fell back to CPU (`fallback=20000`), `151.769923s`
+  - rolled back to keep stable path
+- Step3 (reuse ANE `r1` tensor view, remove per-step create/copy/free for `r1`):
+  - `7.592195s`, acc `95.67%`
+- Net gain of accepted optimizations:
+  - from `8.082938s` to `7.592195s` (~`6.1%` faster)
+  - final dynamic path is about `1.22x` slower than Accelerate baseline.
+
 ## Current decision
 
 - Keep ANE path experimental and opt-in only.

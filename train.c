@@ -24,6 +24,43 @@ static float env_float_or(const char* name, float defv) {
     return strtof(s, NULL);
 }
 
+static Tensor* create_tensor_view(float* data, int* shape, int ndim) {
+    Tensor* t = (Tensor*)malloc(sizeof(Tensor));
+    if (!t) return NULL;
+
+    Arr* d = create_arr_zeros(shape, ndim);
+    if (!d) {
+        free(t);
+        return NULL;
+    }
+    free(d->values);
+    d->values = data;
+
+    t->data = d;
+    t->grad = create_arr_zeros(shape, ndim);
+    if (!t->grad) {
+        free(d->shape);
+        free(d->strides);
+        free(d);
+        free(t);
+        return NULL;
+    }
+    t->op = -1;
+    t->num_prevs = 0;
+    return t;
+}
+
+static void free_tensor_view(Tensor* t) {
+    if (!t) return;
+    if (t->data) {
+        free(t->data->shape);
+        free(t->data->strides);
+        free(t->data);
+    }
+    if (t->grad) free_arr(t->grad);
+    free(t);
+}
+
 /*
  CSV 解析优化：
   - fgets 读一行
@@ -186,11 +223,17 @@ int main() {
     const int use_ane = env_int_or("TENSOR_USE_ANE", 0) ? 1 : 0;
     float* ane_r1_buf = NULL;
     float* ane_dz_buf = NULL;
+    Tensor* ane_r1_view = NULL;
     if (use_ane) {
         ane_r1_buf = (float*)aligned_alloc_64((size_t)B * H * sizeof(float));
         ane_dz_buf = (float*)aligned_alloc_64((size_t)B * H * sizeof(float));
         if (!ane_r1_buf || !ane_dz_buf) {
             perror("aligned_alloc_64");
+            exit(1);
+        }
+        ane_r1_view = create_tensor_view(ane_r1_buf, (int[]) { B, H }, 2);
+        if (!ane_r1_view) {
+            perror("create_tensor_view");
             exit(1);
         }
         printf("ANE training mode enabled (dense1 forward on ANE)\n");
@@ -228,6 +271,7 @@ int main() {
 
 #if USE_ANE_RUNTIME
         if (use_ane) {
+            memset(ane_r1_view->grad->values, 0, (size_t)B * H * sizeof(float));
             int rc = ane_dense_relu_forward(
                 batch_x->data->values,
                 w1->data->values,
@@ -239,7 +283,7 @@ int main() {
                 fprintf(stderr, "ANE forward error: %s\n", ane_backend_last_error());
                 return 1;
             }
-            r1 = create_tensor(ane_r1_buf, (int[]) { B, H }, 2);
+            r1 = ane_r1_view;
         }
         else
 #endif
@@ -318,6 +362,9 @@ int main() {
         // free intermediates
         if (h1) free_tensor(h1);
         if (h1b) free_tensor(h1b);
+#if USE_ANE_RUNTIME
+        if (!use_ane)
+#endif
         free_tensor(r1);
         free_tensor(h2);
         free_tensor(h2b);
@@ -398,6 +445,7 @@ int main() {
 
 #if USE_ANE_RUNTIME
     if (use_ane) {
+        free_tensor_view(ane_r1_view);
         free(ane_r1_buf);
         free(ane_dz_buf);
     }
