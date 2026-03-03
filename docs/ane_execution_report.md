@@ -84,6 +84,24 @@ ANE_ENABLE_PRIVATE_API=1 TENSOR_USE_ANE=1 TRAIN_STEPS=300 ./train_ane
 - Model file `mnist_mlp.bin` saved normally.
 - Follow-up eval after this short run: `84.18% (8418/10000)`.
 
+7. Full 20k comparison run (in this repo)
+```bash
+# Baseline
+make train && ./train
+make eval && ./eval
+
+# ANE experimental path
+make train-ane
+ANE_ENABLE_PRIVATE_API=1 TENSOR_USE_ANE=1 TRAIN_STEPS=20000 ./train_ane
+./eval
+```
+- Baseline train elapsed: `6.238239s`
+- Baseline eval accuracy: `95.66% (9566/10000)`
+- ANE train elapsed: `248.139270s`
+- ANE avg step latency at end: `12.406 ms`
+- ANE eval accuracy: `95.66% (9566/10000)`
+- Relative train speed: ANE path is about `39.8x` slower than Accelerate baseline.
+
 ## Current decision
 
 - Keep current default ANE path as the stable experimental baseline:

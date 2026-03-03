@@ -17,6 +17,7 @@ This file tracks what is still missing for real ANE execution in `ane_backend.m`
   - default path (`ANE_DYNAMIC_WEIGHTS` unset): real ANE execution works
     - compile/load/evaluate via `_ANEInMemoryModel*`
     - dense runs on ANE, `+bias + relu` runs on CPU
+    - full 20k training is functional but currently slower than Accelerate baseline
   - dynamic mode (`ANE_DYNAMIC_WEIGHTS=1`): currently fails at descriptor creation on this code path
   - CPU fallback remains active and is used on any ANE failure
   - cache/compile/fallback counters are exposed by `ane_backend_get_stats()`
