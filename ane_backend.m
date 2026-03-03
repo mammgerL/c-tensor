@@ -26,7 +26,10 @@ typedef struct {
 static AnekernelCacheEntry g_kernel_cache[ANE_KERNEL_CACHE_SIZE];
 
 static Class g_ane_client_cls = Nil;
-static Class g_ane_compiler_cls = Nil;
+static Class g_ane_desc_cls = Nil;
+static Class g_ane_inmem_cls = Nil;
+static Class g_ane_req_cls = Nil;
+static Class g_ane_io_cls = Nil;
 
 static int ane_find_cache_slot(int batch, int in_dim, int out_dim) {
     for (int i = 0; i < ANE_KERNEL_CACHE_SIZE; i++) {
@@ -55,8 +58,12 @@ static int ane_reserve_cache_slot(int batch, int in_dim, int out_dim) {
 
 static void ane_try_bind_runtime(void) {
     g_ane_client_cls = objc_getClass("_ANEClient");
-    g_ane_compiler_cls = objc_getClass("_ANECompiler");
-    if (g_ane_client_cls && g_ane_compiler_cls) {
+    g_ane_desc_cls = objc_getClass("_ANEInMemoryModelDescriptor");
+    g_ane_inmem_cls = objc_getClass("_ANEInMemoryModel");
+    g_ane_req_cls = objc_getClass("_ANERequest");
+    g_ane_io_cls = objc_getClass("_ANEIOSurfaceObject");
+
+    if (g_ane_client_cls && g_ane_desc_cls && g_ane_inmem_cls && g_ane_req_cls && g_ane_io_cls) {
         g_runtime_ready = 1;
     } else {
         g_runtime_ready = 0;
@@ -85,10 +92,10 @@ static void ane_probe_once(void) {
         dlclose(h);
         if (g_runtime_ready) {
             snprintf(g_last_error, sizeof(g_last_error),
-                "private ANE framework detected and classes resolved; execution bridge not implemented");
+                "private ANE framework detected and runtime classes resolved; execution bridge not implemented");
         } else {
             snprintf(g_last_error, sizeof(g_last_error),
-                "private ANE framework detected but class binding failed");
+                "private ANE framework detected but required classes are missing");
         }
     } else {
         snprintf(g_last_error, sizeof(g_last_error),
@@ -175,7 +182,7 @@ int ane_dense_relu_forward(
             "private ANE framework detected but runtime bridge is not implemented; used CPU fallback");
     } else if (g_opt_in && g_private_framework_found && !g_runtime_ready) {
         snprintf(g_last_error, sizeof(g_last_error),
-            "private ANE framework found but _ANEClient/_ANECompiler classes unavailable; used CPU fallback");
+            "private ANE framework found but required classes unavailable; used CPU fallback");
     } else {
         snprintf(g_last_error, sizeof(g_last_error),
             "ANE unavailable: used CPU fallback");
