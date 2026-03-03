@@ -245,7 +245,13 @@ ANE_ENABLE_PRIVATE_API=1 TENSOR_USE_ANE=1 TRAIN_STEPS=300 ./train_ane
 - `TENSOR_USE_ANE=1`：启用训练循环中的 ANE 路径
 - `ANE_ENABLE_PRIVATE_API=1`：启用私有 ANE API 探测与调用
 - `ANE_DYNAMIC_WEIGHTS=1`：启用动态权重路径（推荐；避免每步重编译）
+- `TENSOR_USE_ANE_LAYER2`：第二层后端策略（`1` 强制 ANE，`0` 强制 CPU，默认 `-1` 自动）
+- `TENSOR_ANE_LAYER2_MIN_MACS`：第二层自动启用 ANE 的 MAC 阈值（默认 `1000000`）
 - `TRAIN_STEPS` / `TRAIN_BATCH` / `TRAIN_LR`：覆盖默认训练参数
+
+自动策略说明：
+- 默认会根据第二层形状自动选后端，避免小矩阵走 ANE 导致变慢。
+- 当前默认配置下（`B=128, H=256, O=10`）会自动选择 CPU。
 
 ### 使用 OpenMP 编译（macOS）
 

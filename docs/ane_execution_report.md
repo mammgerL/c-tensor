@@ -139,6 +139,24 @@ ANE_ENABLE_PRIVATE_API=1 ANE_DYNAMIC_WEIGHTS=1 TENSOR_USE_ANE=1 TRAIN_STEPS=2000
   - from `8.082938s` to `7.592195s` (~`6.1%` faster)
   - final dynamic path is about `1.22x` slower than Accelerate baseline.
 
+10. Shape-based backend selection for layer2
+```bash
+# auto policy (default)
+ANE_ENABLE_PRIVATE_API=1 ANE_DYNAMIC_WEIGHTS=1 TENSOR_USE_ANE=1 TRAIN_STEPS=20000 ./train_ane
+
+# force layer2 on ANE
+ANE_ENABLE_PRIVATE_API=1 ANE_DYNAMIC_WEIGHTS=1 TENSOR_USE_ANE=1 TENSOR_USE_ANE_LAYER2=1 TRAIN_STEPS=20000 ./train_ane
+```
+- Auto policy run:
+  - log: `ANE layer2 policy: auto (macs=327680, threshold=1000000) -> CPU`
+  - train elapsed: `7.618934s`
+  - eval accuracy: `95.67% (9567/10000)`
+- Forced layer2 ANE run:
+  - train elapsed: `9.550835s`
+  - eval accuracy: `95.66% (9566/10000)`
+- Conclusion:
+  - shape-based selection prevents the layer2 ANE regression on this workload.
+
 ## Current decision
 
 - Keep ANE path experimental and opt-in only.

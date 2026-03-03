@@ -200,12 +200,14 @@ int main() {
 
     // ---------------- model: 784 -> 256 -> 10 with bias ----------------
     int H = 256;
+    const int O = 10;
+    const int O_PAD = 16;
 
     Tensor* w1 = create_zero_tensor((int[]) { 784, H }, 2);
     Tensor* b1 = create_zero_tensor((int[]) { H }, 1);
 
-    Tensor* w2 = create_zero_tensor((int[]) { H, 10 }, 2);
-    Tensor* b2 = create_zero_tensor((int[]) { 10 }, 1);
+    Tensor* w2 = create_zero_tensor((int[]) { H, O }, 2);
+    Tensor* b2 = create_zero_tensor((int[]) { O }, 1);
 
     // init weights
     for (int i = 0; i < w1->data->size; i++) w1->data->values[i] = kaiming_uniform(784);
@@ -217,17 +219,40 @@ int main() {
     int steps = env_int_or("TRAIN_STEPS", 20000);
 
     Tensor* batch_x = create_zero_tensor((int[]) { B, 784 }, 2);
-    Tensor* batch_y = create_zero_tensor((int[]) { B, 10 }, 2);
+    Tensor* batch_y = create_zero_tensor((int[]) { B, O }, 2);
 
 #if USE_ANE_RUNTIME
     const int use_ane = env_int_or("TENSOR_USE_ANE", 0) ? 1 : 0;
+    const int ane_layer2_cfg = use_ane ? env_int_or("TENSOR_USE_ANE_LAYER2", -1) : 0;
+    const int ane_layer2_min_macs = env_int_or("TENSOR_ANE_LAYER2_MIN_MACS", 1000000);
+    const long long layer2_macs = (long long)B * H * O;
+    int use_ane_layer2 = 0;
+    if (use_ane) {
+        if (ane_layer2_cfg > 0) use_ane_layer2 = 1;      // force on
+        else if (ane_layer2_cfg == 0) use_ane_layer2 = 0; // force off
+        else use_ane_layer2 = (layer2_macs >= ane_layer2_min_macs) ? 1 : 0; // auto
+    }
     float* ane_r1_buf = NULL;
+    float* ane_logits_buf = NULL;
+    float* ane_logits16_buf = NULL;
+    float* ane_w2_pad = NULL;
+    float* ane_b2_pad = NULL;
+    float* ane_dr1_buf = NULL;
     float* ane_dz_buf = NULL;
     Tensor* ane_r1_view = NULL;
+    Tensor* ane_logits_view = NULL;
     if (use_ane) {
         ane_r1_buf = (float*)aligned_alloc_64((size_t)B * H * sizeof(float));
+        if (use_ane_layer2) {
+            ane_logits_buf = (float*)aligned_alloc_64((size_t)B * O * sizeof(float));
+            ane_logits16_buf = (float*)aligned_alloc_64((size_t)B * O_PAD * sizeof(float));
+            ane_w2_pad = (float*)aligned_alloc_64((size_t)H * O_PAD * sizeof(float));
+            ane_b2_pad = (float*)aligned_alloc_64((size_t)O_PAD * sizeof(float));
+            ane_dr1_buf = (float*)aligned_alloc_64((size_t)B * H * sizeof(float));
+        }
         ane_dz_buf = (float*)aligned_alloc_64((size_t)B * H * sizeof(float));
-        if (!ane_r1_buf || !ane_dz_buf) {
+        if (!ane_r1_buf || !ane_dz_buf ||
+            (use_ane_layer2 && (!ane_logits_buf || !ane_logits16_buf || !ane_w2_pad || !ane_b2_pad || !ane_dr1_buf))) {
             perror("aligned_alloc_64");
             exit(1);
         }
@@ -236,7 +261,26 @@ int main() {
             perror("create_tensor_view");
             exit(1);
         }
-        printf("ANE training mode enabled (dense1 forward on ANE)\n");
+        if (use_ane_layer2) {
+            ane_logits_view = create_tensor_view(ane_logits_buf, (int[]) { B, O }, 2);
+            if (!ane_logits_view) {
+                perror("create_tensor_view");
+                exit(1);
+            }
+            memset(ane_w2_pad, 0, (size_t)H * O_PAD * sizeof(float));
+            memset(ane_b2_pad, 0, (size_t)O_PAD * sizeof(float));
+        }
+        if (ane_layer2_cfg < 0) {
+            printf("ANE layer2 policy: auto (macs=%lld, threshold=%d) -> %s\n",
+                layer2_macs, ane_layer2_min_macs, use_ane_layer2 ? "ANE" : "CPU");
+        } else {
+            printf("ANE layer2 policy: forced %s\n", use_ane_layer2 ? "ANE" : "CPU");
+        }
+        if (use_ane_layer2) {
+            printf("ANE training mode enabled (dense1+dense2 forward on ANE)\n");
+        } else {
+            printf("ANE training mode enabled (dense1 forward on ANE)\n");
+        }
     }
 #endif
 
@@ -267,36 +311,86 @@ int main() {
         // forward
         Tensor* h1 = NULL;
         Tensor* h1b = NULL;
+        Tensor* h2 = NULL;
+        Tensor* h2b = NULL;
         Tensor* r1 = NULL;
+        Tensor* logits = NULL;
 
 #if USE_ANE_RUNTIME
         if (use_ane) {
             memset(ane_r1_view->grad->values, 0, (size_t)B * H * sizeof(float));
-            int rc = ane_dense_relu_forward(
-                batch_x->data->values,
-                w1->data->values,
-                b1->data->values,
-                ane_r1_buf,
-                B, 784, H
-            );
-            if (rc == ANE_BACKEND_ERROR) {
-                fprintf(stderr, "ANE forward error: %s\n", ane_backend_last_error());
-                return 1;
+            if (use_ane_layer2) {
+                memset(ane_logits_view->grad->values, 0, (size_t)B * O * sizeof(float));
+                int rc = ane_dense_relu_forward(
+                    batch_x->data->values,
+                    w1->data->values,
+                    b1->data->values,
+                    ane_r1_buf,
+                    B, 784, H
+                );
+                if (rc == ANE_BACKEND_ERROR) {
+                    fprintf(stderr, "ANE forward error: %s\n", ane_backend_last_error());
+                    return 1;
+                }
+                r1 = ane_r1_view;
+
+                for (int h = 0; h < H; h++) {
+                    memcpy(
+                        ane_w2_pad + (size_t)h * O_PAD,
+                        w2->data->values + (size_t)h * O,
+                        (size_t)O * sizeof(float)
+                    );
+                }
+                memcpy(ane_b2_pad, b2->data->values, (size_t)O * sizeof(float));
+
+                rc = ane_dense_forward(
+                    r1->data->values,
+                    ane_w2_pad,
+                    ane_b2_pad,
+                    ane_logits16_buf,
+                    B, H, O_PAD
+                );
+                if (rc == ANE_BACKEND_ERROR) {
+                    fprintf(stderr, "ANE forward error: %s\n", ane_backend_last_error());
+                    return 1;
+                }
+                for (int b = 0; b < B; b++) {
+                    memcpy(
+                        ane_logits_buf + (size_t)b * O,
+                        ane_logits16_buf + (size_t)b * O_PAD,
+                        (size_t)O * sizeof(float)
+                    );
+                }
+                logits = ane_logits_view;
+            } else {
+                int rc = ane_dense_relu_forward(
+                    batch_x->data->values,
+                    w1->data->values,
+                    b1->data->values,
+                    ane_r1_buf,
+                    B, 784, H
+                );
+                if (rc == ANE_BACKEND_ERROR) {
+                    fprintf(stderr, "ANE forward error: %s\n", ane_backend_last_error());
+                    return 1;
+                }
+                r1 = ane_r1_view;
+                h2 = matmul(r1, w2);           // (B,10)
+                h2b = add_bias(h2, b2);        // (B,10)
+                logits = h2b;
             }
-            r1 = ane_r1_view;
-        }
-        else
+        } else
 #endif
         {
-            h1 = matmul(batch_x, w1);       // (B,H)
-            h1b = add_bias(h1, b1);          // (B,H)
-            r1 = relu(h1b);                 // (B,H)
+            h1 = matmul(batch_x, w1);          // (B,H)
+            h1b = add_bias(h1, b1);            // (B,H)
+            r1 = relu(h1b);                    // (B,H)
+            h2 = matmul(r1, w2);               // (B,10)
+            h2b = add_bias(h2, b2);            // (B,10)
+            logits = h2b;
         }
 
-        Tensor* h2 = matmul(r1, w2);            // (B,10)
-        Tensor* h2b = add_bias(h2, b2);          // (B,10)
-
-        Tensor* lout = logsoftmax(h2b);          // (B,10)
+        Tensor* lout = logsoftmax(logits);      // (B,10)
 
         Tensor* mul_out = mul(lout, batch_y);  // (B,10)
         Tensor* per_sample = sum_axis1(mul_out); // (B,1)
@@ -308,8 +402,43 @@ int main() {
 
 #if USE_ANE_RUNTIME
         if (use_ane) {
+            const float* dr1 = NULL;
+            if (use_ane_layer2) {
+                const float* dlogits = ane_logits_view->grad->values;
+
+                // dW2 += r1^T * dlogits
+                cblas_sgemm(CblasRowMajor,
+                    CblasTrans, CblasNoTrans,
+                    H, O, B,
+                    1.0f,
+                    r1->data->values, H,
+                    dlogits, O,
+                    1.0f,
+                    w2->grad->values, O);
+
+                // db2 += sum_b dlogits[b,:]
+                for (int o = 0; o < O; o++) {
+                    float s = 0.0f;
+                    for (int b = 0; b < B; b++) s += dlogits[b * O + o];
+                    b2->grad->values[o] += s;
+                }
+
+                // dr1 = dlogits * W2^T
+                cblas_sgemm(CblasRowMajor,
+                    CblasNoTrans, CblasTrans,
+                    B, H, O,
+                    1.0f,
+                    dlogits, O,
+                    w2->data->values, O,
+                    0.0f,
+                    ane_dr1_buf, H);
+
+                dr1 = ane_dr1_buf;
+            } else {
+                dr1 = r1->grad->values;
+            }
+
             // manual backward for layer1: dz = d(r1) * relu'(z), z>0 <=> r1>0
-            const float* dr1 = r1->grad->values;
             const float* r1v = r1->data->values;
             for (int i = 0; i < B * H; i++) {
                 ane_dz_buf[i] = (r1v[i] > 0.0f) ? dr1[i] : 0.0f;
@@ -446,7 +575,13 @@ int main() {
 #if USE_ANE_RUNTIME
     if (use_ane) {
         free_tensor_view(ane_r1_view);
+        if (ane_logits_view) free_tensor_view(ane_logits_view);
         free(ane_r1_buf);
+        free(ane_logits_buf);
+        free(ane_logits16_buf);
+        free(ane_w2_pad);
+        free(ane_b2_pad);
+        free(ane_dr1_buf);
         free(ane_dz_buf);
     }
 #endif
