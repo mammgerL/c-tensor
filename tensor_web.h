@@ -9,8 +9,10 @@ typedef struct {
     float confidence;   // 预测置信度（softmax 概率）
     float* hidden;      // 隐藏层激活 (H=256)，ReLU 之后
     float* pre_relu;    // 隐藏层激活 (H=256)，ReLU 之前（加偏置后）
+    float* matmul1;     // 隐藏层 matmul 输出 (H=256)，加偏置之前
     float* output;      // 输出层 logsoftmax (10)
     float* pre_softmax; // 输出层原始分数 (10)，logsoftmax 之前（加偏置后）
+    float* matmul2;     // 输出层 matmul 输出 (10)，加偏置之前
     int hidden_size;
     int output_size;
 } ForwardTrace;
@@ -28,11 +30,17 @@ static inline ForwardTrace* create_forward_trace(int hidden_size, int output_siz
     trace->pre_relu = (float*)malloc(hidden_size * sizeof(float));
     if (!trace->pre_relu) { perror("malloc pre_relu"); exit(1); }
 
+    trace->matmul1 = (float*)malloc(hidden_size * sizeof(float));
+    if (!trace->matmul1) { perror("malloc matmul1"); exit(1); }
+
     trace->output = (float*)malloc(output_size * sizeof(float));
     if (!trace->output) { perror("malloc output"); exit(1); }
 
     trace->pre_softmax = (float*)malloc(output_size * sizeof(float));
     if (!trace->pre_softmax) { perror("malloc pre_softmax"); exit(1); }
+
+    trace->matmul2 = (float*)malloc(output_size * sizeof(float));
+    if (!trace->matmul2) { perror("malloc matmul2"); exit(1); }
 
     trace->hidden_size = hidden_size;
     trace->output_size = output_size;
@@ -48,8 +56,10 @@ static inline void free_forward_trace(ForwardTrace* trace) {
     free(trace->pixels);
     free(trace->hidden);
     free(trace->pre_relu);
+    free(trace->matmul1);
     free(trace->output);
     free(trace->pre_softmax);
+    free(trace->matmul2);
     free(trace);
 }
 
@@ -107,8 +117,10 @@ static inline ForwardTrace* forward_single(
     Tensor* h2b = add_bias(h2, b2);
     Tensor* lout = logsoftmax(h2b);
 
+    memcpy(trace->matmul1, h1->data->values, H * sizeof(float));
     memcpy(trace->pre_relu, h1b->data->values, H * sizeof(float));
     memcpy(trace->hidden, r1->data->values, H * sizeof(float));
+    memcpy(trace->matmul2, h2->data->values, 10 * sizeof(float));
     memcpy(trace->pre_softmax, h2b->data->values, 10 * sizeof(float));
     memcpy(trace->output, lout->data->values, 10 * sizeof(float));
 

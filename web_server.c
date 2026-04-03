@@ -187,6 +187,7 @@ extern void handle_api_predict(int client_fd, const char* query);
 extern void handle_api_eval(int client_fd);
 extern void handle_api_indices(int client_fd, const char* query);
 extern void handle_api_predict_pixels(int client_fd, const char* body);
+extern void handle_api_weights(int client_fd, const char* query);
 
 static const char* get_content_type(const char* path) {
     const char* ext = strrchr(path, '.');
@@ -240,6 +241,8 @@ static void handle_request(int client_fd) {
         } else {
             send_response(client_fd, 400, "Bad Request", "text/plain", "No body");
         }
+    } else if (strcmp(req.path, "/api/weights") == 0) {
+        handle_api_weights(client_fd, req.query);
     }
     // Static file serving (Vue SPA)
     else if (strcmp(req.path, "/") == 0 || strcmp(req.path, "/index.html") == 0) {

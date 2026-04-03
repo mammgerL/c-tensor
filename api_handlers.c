@@ -614,6 +614,22 @@ void handle_api_predict_pixels(int client_fd, const char* body) {
 
     append_float_array(&p, &remaining, trace->pre_softmax, trace->output_size);
 
+    len = snprintf(p, remaining, ",\"matmul1\":");
+    if (len > 0 && (size_t)len < remaining) {
+        p += len;
+        remaining -= (size_t)len;
+    }
+
+    append_float_array(&p, &remaining, trace->matmul1, trace->hidden_size);
+
+    len = snprintf(p, remaining, ",\"matmul2\":");
+    if (len > 0 && (size_t)len < remaining) {
+        p += len;
+        remaining -= (size_t)len;
+    }
+
+    append_float_array(&p, &remaining, trace->matmul2, trace->output_size);
+
     len = snprintf(p, remaining, "}");
     if (len > 0 && (size_t)len < remaining) {
         p += len;
@@ -623,4 +639,72 @@ void handle_api_predict_pixels(int client_fd, const char* body) {
     send_json_response(client_fd, buffer);
     free(buffer);
     free_forward_trace(trace);
+}
+
+void handle_api_weights(int client_fd, const char* query) {
+    if (!g_w1 || !g_b1 || !g_w2 || !g_b2) {
+        send_json_response(client_fd, "{\"error\":\"model not loaded\"}");
+        return;
+    }
+
+    char neuron_str[32] = "0";
+    char layer_str[32] = "1";
+    (void)get_query_param(query, "neuron", neuron_str, sizeof(neuron_str));
+    (void)get_query_param(query, "layer", layer_str, sizeof(layer_str));
+
+    int neuron_idx = atoi(neuron_str);
+    int layer = atoi(layer_str);
+
+    char* buffer = (char*)malloc(65536);
+    if (!buffer) {
+        send_json_response(client_fd, "{\"error\":\"out of memory\"}");
+        return;
+    }
+
+    char* p = buffer;
+    size_t remaining = 65536;
+    int len;
+
+    if (layer == 1) {
+        int H = g_w1->data->shape[1];
+        if (neuron_idx < 0 || neuron_idx >= H) {
+            send_json_response(client_fd, "{\"error\":\"neuron out of range\"}");
+            free(buffer);
+            return;
+        }
+        len = snprintf(p, remaining, "{\"layer\":1,\"neuron\":%d,\"weights\":[", neuron_idx);
+        if (len > 0 && (size_t)len < remaining) { p += len; remaining -= (size_t)len; }
+        for (int i = 0; i < 784; i++) {
+            if (i > 0) {
+                len = snprintf(p, remaining, ",");
+                if (len > 0 && (size_t)len < remaining) { p += len; remaining -= (size_t)len; }
+            }
+            len = snprintf(p, remaining, "%.6f", g_w1->data->values[i * H + neuron_idx]);
+            if (len > 0 && (size_t)len < remaining) { p += len; remaining -= (size_t)len; }
+        }
+        len = snprintf(p, remaining, "],\"bias\":%.6f}", g_b1->data->values[neuron_idx]);
+    } else {
+        if (neuron_idx < 0 || neuron_idx >= 10) {
+            send_json_response(client_fd, "{\"error\":\"neuron out of range\"}");
+            free(buffer);
+            return;
+        }
+        int H = g_w1->data->shape[1];
+        len = snprintf(p, remaining, "{\"layer\":2,\"neuron\":%d,\"weights\":[", neuron_idx);
+        if (len > 0 && (size_t)len < remaining) { p += len; remaining -= (size_t)len; }
+        for (int i = 0; i < H; i++) {
+            if (i > 0) {
+                len = snprintf(p, remaining, ",");
+                if (len > 0 && (size_t)len < remaining) { p += len; remaining -= (size_t)len; }
+            }
+            len = snprintf(p, remaining, "%.6f", g_w2->data->values[i * 10 + neuron_idx]);
+            if (len > 0 && (size_t)len < remaining) { p += len; remaining -= (size_t)len; }
+        }
+        len = snprintf(p, remaining, "],\"bias\":%.6f}", g_b2->data->values[neuron_idx]);
+    }
+
+    if (len > 0 && (size_t)len < remaining) { p += len; remaining -= (size_t)len; }
+
+    send_json_response(client_fd, buffer);
+    free(buffer);
 }

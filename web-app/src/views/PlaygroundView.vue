@@ -2,6 +2,7 @@
 import { ref, reactive, computed, onMounted, watch, nextTick } from 'vue'
 import ProbabilityChart from '../components/ProbabilityChart.vue'
 import NetworkVisual from '../components/NetworkVisual.vue'
+import ComputationTrace from '../components/ComputationTrace.vue'
 
 const canvasRef = ref(null)
 const pixelGridRef = ref(null)
@@ -662,6 +663,13 @@ const progressPercent = computed(() => {
               </div>
             </div>
           </div>
+
+          <!-- 真实计算过程展示 -->
+          <ComputationTrace
+            v-if="result && currentStep >= 1"
+            :step="currentStep"
+            :result="result"
+          />
 
           <!-- 神经网络连接图 -->
           <div class="network-block">
