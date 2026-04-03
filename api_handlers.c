@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <ctype.h>
 
 void send_response(int client_fd, int status_code, const char* status_text,
                         const char* content_type, const char* body);
@@ -514,4 +515,112 @@ void handle_api_indices(int client_fd, const char* query) {
 
     send_json_response(client_fd, buffer);
     free(buffer);
+}
+
+static void parse_json_pixels(const char* body, float* pixels, int* count) {
+    *count = 0;
+    const char* arr_start = strchr(body, '[');
+    if (!arr_start) return;
+
+    const char* p = arr_start + 1;
+    while (*p && *count < 784) {
+        while (*p && (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r' || *p == ',')) p++;
+        if (*p == ']' || *p == '\0') break;
+
+        char* end = NULL;
+        float val = strtof(p, &end);
+        if (end != p) {
+            pixels[*count] = val;
+            (*count)++;
+            p = end;
+        } else {
+            p++;
+        }
+    }
+}
+
+void handle_api_predict_pixels(int client_fd, const char* body) {
+    if (!g_w1 || !g_b1 || !g_w2 || !g_b2) {
+        send_json_response(client_fd, "{\"error\":\"model not loaded\"}");
+        return;
+    }
+
+    float pixels[784] = {0};
+    int pixel_count = 0;
+    parse_json_pixels(body, pixels, &pixel_count);
+
+    if (pixel_count != 784) {
+        send_json_response(client_fd, "{\"error\":\"expected 784 pixels\"}");
+        return;
+    }
+
+    ForwardTrace* trace = forward_single(pixels, -1, g_w1, g_b1, g_w2, g_b2);
+
+    char* buffer = (char*)malloc(65536);
+    if (!buffer) {
+        free_forward_trace(trace);
+        send_json_response(client_fd, "{\"error\":\"out of memory\"}");
+        return;
+    }
+
+    char* p = buffer;
+    size_t remaining = 65536;
+
+    int len = snprintf(p, remaining,
+        "{"
+        "\"true_label\":-1,"
+        "\"predicted\":%d,"
+        "\"correct\":false,"
+        "\"confidence\":%.6f,"
+        "\"pixels\":",
+        trace->predicted, trace->confidence);
+
+    if (len > 0 && (size_t)len < remaining) {
+        p += len;
+        remaining -= (size_t)len;
+    }
+
+    append_float_array(&p, &remaining, trace->pixels, 784);
+
+    len = snprintf(p, remaining, ",\"hidden\":");
+    if (len > 0 && (size_t)len < remaining) {
+        p += len;
+        remaining -= (size_t)len;
+    }
+
+    append_float_array(&p, &remaining, trace->hidden, trace->hidden_size);
+
+    len = snprintf(p, remaining, ",\"pre_relu\":");
+    if (len > 0 && (size_t)len < remaining) {
+        p += len;
+        remaining -= (size_t)len;
+    }
+
+    append_float_array(&p, &remaining, trace->pre_relu, trace->hidden_size);
+
+    len = snprintf(p, remaining, ",\"output\":");
+    if (len > 0 && (size_t)len < remaining) {
+        p += len;
+        remaining -= (size_t)len;
+    }
+
+    append_float_array(&p, &remaining, trace->output, trace->output_size);
+
+    len = snprintf(p, remaining, ",\"pre_softmax\":");
+    if (len > 0 && (size_t)len < remaining) {
+        p += len;
+        remaining -= (size_t)len;
+    }
+
+    append_float_array(&p, &remaining, trace->pre_softmax, trace->output_size);
+
+    len = snprintf(p, remaining, "}");
+    if (len > 0 && (size_t)len < remaining) {
+        p += len;
+        remaining -= (size_t)len;
+    }
+
+    send_json_response(client_fd, buffer);
+    free(buffer);
+    free_forward_trace(trace);
 }

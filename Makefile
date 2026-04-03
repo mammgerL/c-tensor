@@ -69,6 +69,20 @@ eval-run: eval data
 web-run: web data
 	./web
 
+# 启动新版 Vue 3 前端开发服务
+web-dev:
+	cd web-app && npm run dev
+
+# 构建新版前端
+web-build:
+	cd web-app && npm run build
+	rm -rf html/*
+	cp -r web-app/dist/* html/
+
+# 安装前端依赖
+web-install:
+	cd web-app && npm install
+
 # 清理编译产物
 clean:
 	rm -f $(TARGETS)
@@ -96,7 +110,10 @@ help:
 	@echo "  run        - 完整流程: 数据准备 + 训练 + 评估"
 	@echo "  train-run  - 编译并运行训练"
 	@echo "  eval-run   - 编译并运行评估"
-	@echo "  web-run    - 编译并启动 Web 服务"
+	@echo "  web-run    - 编译并启动 Web 服务（C 后端）"
+	@echo "  web-dev    - 启动 Vue 3 前端开发服务"
+	@echo "  web-build  - 构建 Vue 3 前端"
+	@echo "  web-install - 安装前端依赖"
 	@echo "  debug      - Debug 编译 (带调试符号)"
 	@echo "  clean      - 清理编译产物"
 	@echo "  cleanall   - 清理所有生成文件"

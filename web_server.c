@@ -186,6 +186,19 @@ extern void handle_api_architecture(int client_fd);
 extern void handle_api_predict(int client_fd, const char* query);
 extern void handle_api_eval(int client_fd);
 extern void handle_api_indices(int client_fd, const char* query);
+extern void handle_api_predict_pixels(int client_fd, const char* body);
+
+static const char* get_content_type(const char* path) {
+    const char* ext = strrchr(path, '.');
+    if (!ext) return "application/octet-stream";
+    if (strcmp(ext, ".html") == 0) return "text/html";
+    if (strcmp(ext, ".css") == 0) return "text/css";
+    if (strcmp(ext, ".js") == 0) return "application/javascript";
+    if (strcmp(ext, ".svg") == 0) return "image/svg+xml";
+    if (strcmp(ext, ".png") == 0) return "image/png";
+    if (strcmp(ext, ".json") == 0) return "application/json";
+    return "application/octet-stream";
+}
 
 static void handle_request(int client_fd) {
     struct timeval timeout;
@@ -205,15 +218,14 @@ static void handle_request(int client_fd) {
     HttpRequest req;
     parse_request(buffer, &req);
 
-    if (strcmp(req.method, "GET") != 0) {
+    if (strcmp(req.method, "GET") != 0 && strcmp(req.method, "POST") != 0) {
         send_response(client_fd, 405, "Method Not Allowed", "text/plain", "Method not allowed");
         close(client_fd);
         return;
     }
 
-    if (strcmp(req.path, "/") == 0 || strcmp(req.path, "/index.html") == 0) {
-        send_file(client_fd, "html/index.html", "text/html");
-    } else if (strcmp(req.path, "/api/architecture") == 0) {
+    // API routes
+    if (strcmp(req.path, "/api/architecture") == 0) {
         handle_api_architecture(client_fd);
     } else if (strcmp(req.path, "/api/predict") == 0) {
         handle_api_predict(client_fd, req.query);
@@ -221,6 +233,25 @@ static void handle_request(int client_fd) {
         handle_api_eval(client_fd);
     } else if (strcmp(req.path, "/api/indices") == 0) {
         handle_api_indices(client_fd, req.query);
+    } else if (strcmp(req.path, "/api/predict_pixels") == 0 && strcmp(req.method, "POST") == 0) {
+        const char* body_start = strstr(buffer, "\r\n\r\n");
+        if (body_start) {
+            handle_api_predict_pixels(client_fd, body_start + 4);
+        } else {
+            send_response(client_fd, 400, "Bad Request", "text/plain", "No body");
+        }
+    }
+    // Static file serving (Vue SPA)
+    else if (strcmp(req.path, "/") == 0 || strcmp(req.path, "/index.html") == 0) {
+        send_file(client_fd, "html/index.html", "text/html");
+    } else if (strncmp(req.path, "/assets/", 8) == 0 || strcmp(req.path, "/favicon.svg") == 0 || strcmp(req.path, "/icons.svg") == 0) {
+        char filepath[512];
+        snprintf(filepath, sizeof(filepath), "html%s", req.path);
+        send_file(client_fd, filepath, get_content_type(req.path));
+    }
+    // Vue SPA fallback: non-API, non-asset paths → index.html
+    else if (strncmp(req.path, "/api/", 5) != 0) {
+        send_file(client_fd, "html/index.html", "text/html");
     } else {
         send_response(client_fd, 404, "Not Found", "text/plain", "Not Found");
     }

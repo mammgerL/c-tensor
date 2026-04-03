@@ -7,8 +7,10 @@ typedef struct {
     int true_label;     // 真实标签
     int predicted;      // 预测标签
     float confidence;   // 预测置信度（softmax 概率）
-    float* hidden;      // 隐藏层激活 (H=256)
-    float* output;      // 输出层 logit/logsoftmax (10)
+    float* hidden;      // 隐藏层激活 (H=256)，ReLU 之后
+    float* pre_relu;    // 隐藏层激活 (H=256)，ReLU 之前（加偏置后）
+    float* output;      // 输出层 logsoftmax (10)
+    float* pre_softmax; // 输出层原始分数 (10)，logsoftmax 之前（加偏置后）
     int hidden_size;
     int output_size;
 } ForwardTrace;
@@ -23,8 +25,14 @@ static inline ForwardTrace* create_forward_trace(int hidden_size, int output_siz
     trace->hidden = (float*)malloc(hidden_size * sizeof(float));
     if (!trace->hidden) { perror("malloc hidden"); exit(1); }
 
+    trace->pre_relu = (float*)malloc(hidden_size * sizeof(float));
+    if (!trace->pre_relu) { perror("malloc pre_relu"); exit(1); }
+
     trace->output = (float*)malloc(output_size * sizeof(float));
     if (!trace->output) { perror("malloc output"); exit(1); }
+
+    trace->pre_softmax = (float*)malloc(output_size * sizeof(float));
+    if (!trace->pre_softmax) { perror("malloc pre_softmax"); exit(1); }
 
     trace->hidden_size = hidden_size;
     trace->output_size = output_size;
@@ -39,7 +47,9 @@ static inline void free_forward_trace(ForwardTrace* trace) {
     if (!trace) return;
     free(trace->pixels);
     free(trace->hidden);
+    free(trace->pre_relu);
     free(trace->output);
+    free(trace->pre_softmax);
     free(trace);
 }
 
@@ -97,7 +107,9 @@ static inline ForwardTrace* forward_single(
     Tensor* h2b = add_bias(h2, b2);
     Tensor* lout = logsoftmax(h2b);
 
+    memcpy(trace->pre_relu, h1b->data->values, H * sizeof(float));
     memcpy(trace->hidden, r1->data->values, H * sizeof(float));
+    memcpy(trace->pre_softmax, h2b->data->values, 10 * sizeof(float));
     memcpy(trace->output, lout->data->values, 10 * sizeof(float));
 
     trace->predicted = argmax(trace->output, 10);
