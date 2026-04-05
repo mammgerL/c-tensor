@@ -1,6 +1,7 @@
 # 编译产物
 train
 eval
+web
 
 #数据
 data/
@@ -8,7 +9,8 @@ data/
 
 # 模型文件
 *.bin
-
+!web-app/public/weights.bin
+!html/weights.bin
 
 # macOS
 .DS_Store
@@ -23,3 +25,7 @@ data/
 # 调试文件
 *.dSYM/
 *.out
+
+# WASM dev files (not used)
+wasm_inference.c
+build_wasm.sh

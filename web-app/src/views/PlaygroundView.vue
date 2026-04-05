@@ -3,6 +3,23 @@ import { ref, reactive, computed, onMounted, watch, nextTick } from 'vue'
 import ProbabilityChart from '../components/ProbabilityChart.vue'
 import NetworkVisual from '../components/NetworkVisual.vue'
 import ComputationTrace from '../components/ComputationTrace.vue'
+import { MnistInference } from '../inference.js'
+
+const inference = new MnistInference()
+const modelReady = ref(false)
+const modelError = ref(null)
+
+onMounted(async () => {
+  try {
+    const weightsUrl = import.meta.env.DEV ? '/weights.bin' : '/c-tensor/weights.bin'
+    await inference.loadWeights(weightsUrl)
+    modelReady.value = true
+  } catch (e) {
+    modelError.value = e.message
+    console.error('Failed to load model weights:', e)
+  }
+  setupCanvas()
+})
 
 const canvasRef = ref(null)
 const pixelGridRef = ref(null)
@@ -29,10 +46,6 @@ const computeSteps = [
   { id: 'logsoftmax', label: 'Step 7: LogSoftmax', code: 'out = log_softmax(h2b)', desc: '将分数转为对数概率分布', detail: 'log_softmax(x)[i] = x[i] - max(x) - log(Σ exp(x[j] - max(x)))。减 max 是为了数值稳定性。结果满足 Σ exp(out[i]) = 1。' },
   { id: 'argmax', label: 'Step 8: Argmax', code: 'predicted = argmax(out)', desc: '取最大概率对应的数字', detail: '遍历 10 个输出值，找到最大的那个的索引。这就是网络的最终预测。置信度 = exp(out[predicted])。' },
 ]
-
-onMounted(() => {
-  setupCanvas()
-})
 
 function setupCanvas() {
   const canvas = canvasRef.value
@@ -396,31 +409,23 @@ const apiError = ref(null)
 
 async function analyze() {
   if (!hasDrawn.value) return
+  if (!modelReady.value) {
+    apiError.value = '模型权重未加载，请检查 weights.bin 是否存在'
+    return
+  }
   isAnalyzing.value = true
   currentStep.value = 0
   apiError.value = null
 
   const pixels = getPixelData()
 
-  const nonZeroCount = pixels.filter(p => Math.abs(p) > 0.1).length
-  console.log('Pixel stats:', { total: pixels.length, nonZero: nonZeroCount, min: Math.min(...pixels), max: Math.max(...pixels) })
-
   try {
-    const res = await fetch('/api/predict_pixels', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pixels }),
-    })
-    if (!res.ok) {
-      const errText = await res.text()
-      throw new Error(`API returned ${res.status}: ${errText}`)
-    }
-    result.value = await res.json()
-    console.log('Backend result:', { predicted: result.value.predicted, confidence: result.value.confidence })
+    result.value = inference.predict(pixels)
+    console.log('Inference result:', { predicted: result.value.predicted, confidence: result.value.confidence })
     currentStep.value = computeSteps.length - 1
     drawPixelGrid()
   } catch (e) {
-    console.error('Analysis error:', e)
+    console.error('Inference error:', e)
     apiError.value = e.message
   } finally {
     isAnalyzing.value = false
@@ -518,16 +523,27 @@ const progressPercent = computed(() => {
       </div>
 
       <div class="right-panel">
-        <div v-if="!result && !apiError" class="result-placeholder">
+        <div v-if="modelError" class="error-display">
+          <span class="error-icon">⚠️</span>
+          <h3>模型加载失败</h3>
+          <p class="error-message">{{ modelError }}</p>
+          <p class="error-hint">请确保 <code>weights.bin</code> 存在于 <code>web-app/public/</code> 目录下</p>
+        </div>
+
+        <div v-if="!modelReady && !modelError" class="result-placeholder">
+          <span class="placeholder-icon">⏳</span>
+          <p>加载模型权重中...</p>
+        </div>
+
+        <div v-if="!result && !apiError && modelReady" class="result-placeholder">
           <span class="placeholder-icon">←</span>
           <p>在左侧画一个数字，然后点击"执行前向传播"</p>
         </div>
 
         <div v-if="apiError" class="error-display">
           <span class="error-icon">⚠️</span>
-          <h3>API 调用失败</h3>
+          <h3>推理失败</h3>
           <p class="error-message">{{ apiError }}</p>
-          <p class="error-hint">请确保 C 后端已启动：<code>./web</code>（端口 3000）</p>
         </div>
 
         <template v-if="result">
