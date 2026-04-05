@@ -24,6 +24,8 @@ const sampleCount = ref(0)
 let samples = null  // { count, pixelsU8: Uint8Array, labels: Uint8Array }
 const predictions = []  // [{ predicted, correct }, ...], same length as samples.count
 
+const scoringProgress = ref(null)  // { done, total } while background scoring runs
+
 onMounted(async () => {
   try {
     loadMessage.value = '加载权重…'
@@ -36,43 +38,55 @@ onMounted(async () => {
     samples = await loadTestSamples(samplesUrl)
     sampleCount.value = samples.count
 
-    loadMessage.value = `推理 ${samples.count.toLocaleString()} 个样例…`
-    await scoreAll()
-
-    loadSampleGrid()
+    // Show UI immediately; sample 0 + the 50-sample grid score on demand.
+    // Full-set scoring (for accuracy stats + wrong-example buttons) runs in
+    // the background so we don't block first paint.
+    isLoading.value = false
     loadSample(0)
+    loadSampleGrid()
+    scoreAllInBackground()
   } catch (e) {
     console.error('Failed to initialize explore view:', e)
     loadMessage.value = `加载失败：${e.message}`
-  } finally {
     isLoading.value = false
   }
 })
 
-async function scoreAll() {
-  // Batched loop with yields every few hundred samples so the UI thread
-  // can update the "loading" label and stay responsive on large sets.
-  const N = samples.count
+function scoreSample(i) {
+  // Memoized slim forward pass; returns cached entry if already computed.
+  if (predictions[i]) return predictions[i]
+  const x = normalizePixels(samples.pixelsU8, i * 784, 784)
+  const { predicted } = inference.predictFast(x)
+  const entry = { predicted, correct: predicted === samples.labels[i] }
+  predictions[i] = entry
+  return entry
+}
+
+async function scoreAllInBackground() {
+  const N = sampleCount.value
+  scoringProgress.value = { done: 0, total: N }
   let correct = 0
-  const CHUNK = 500
+  const CHUNK = 250
   for (let start = 0; start < N; start += CHUNK) {
     const end = Math.min(start + CHUNK, N)
     for (let i = start; i < end; i++) {
-      const x = normalizePixels(samples.pixelsU8, i * 784, 784)
-      const { predicted } = inference.predictFast(x)
-      const isCorrect = predicted === samples.labels[i]
-      predictions[i] = { predicted, correct: isCorrect }
-      if (isCorrect) correct++
+      if (scoreSample(i).correct) correct++
     }
-    loadMessage.value = `推理中 ${end.toLocaleString()} / ${N.toLocaleString()}…`
+    scoringProgress.value = { done: end, total: N }
     await new Promise(r => setTimeout(r, 0))  // yield to paint loop
   }
+  // Recompute correct count from cache (scoreSample may have counted some
+  // during grid/navigation, but we haven't been summing those — easier to
+  // re-sum once at the end).
+  correct = 0
+  for (let i = 0; i < N; i++) if (predictions[i].correct) correct++
   stats.value = {
     total: N,
     correct,
     incorrect: N - correct,
     accuracy: (correct / N) * 100,
   }
+  scoringProgress.value = null
 }
 
 function predictDetailed(index) {
@@ -105,7 +119,7 @@ function loadSampleGrid() {
     picks.add(Math.floor(Math.random() * sampleCount.value))
   }
   sampleGrid.value = Array.from(picks).map((idx, gridIndex) => {
-    const p = predictions[idx]
+    const p = scoreSample(idx)
     return {
       gridIndex,
       index: idx,
@@ -125,6 +139,30 @@ function navigate(dir) {
 
 function randomSample() {
   loadSample(Math.floor(Math.random() * sampleCount.value))
+}
+
+function nextIncorrect() {
+  // Search forward from the current index, wrapping around, for the next
+  // sample the model got wrong.
+  const N = sampleCount.value
+  for (let step = 1; step <= N; step++) {
+    const idx = (currentIndex.value + step) % N
+    if (!predictions[idx].correct) {
+      loadSample(idx)
+      return
+    }
+  }
+}
+
+function randomIncorrect() {
+  // Collect all incorrect indices and pick one at random.
+  const wrongs = []
+  for (let i = 0; i < sampleCount.value; i++) {
+    if (!predictions[i].correct) wrongs.push(i)
+  }
+  if (wrongs.length > 0) {
+    loadSample(wrongs[Math.floor(Math.random() * wrongs.length)])
+  }
 }
 
 function selectFromGrid(item) {
@@ -154,6 +192,16 @@ function selectFromGrid(item) {
     </div>
 
     <template v-else>
+
+    <div v-if="scoringProgress" class="scoring-progress">
+      <span class="scoring-spinner">⚡</span>
+      <span class="scoring-label">
+        后台计算准确率：{{ scoringProgress.done.toLocaleString() }} / {{ scoringProgress.total.toLocaleString() }}
+      </span>
+      <div class="scoring-bar">
+        <div class="scoring-bar-fill" :style="{ width: (scoringProgress.done / scoringProgress.total * 100) + '%' }"></div>
+      </div>
+    </div>
 
     <div v-if="stats" class="stats-banner">
       <div class="stat-item">
@@ -221,6 +269,22 @@ function selectFromGrid(item) {
         </div>
         <button class="nav-btn" @click="navigate(1)" :disabled="currentIndex >= sampleCount - 1">下一个 →</button>
         <button class="random-btn" @click="randomSample">🎲 随机</button>
+        <button
+          class="wrong-btn"
+          @click="nextIncorrect"
+          :disabled="!stats || stats.incorrect === 0"
+          title="跳到下一个分类错误的样本"
+        >
+          ❌ 下一个错误
+        </button>
+        <button
+          class="wrong-btn"
+          @click="randomIncorrect"
+          :disabled="!stats || stats.incorrect === 0"
+          title="随机跳到一个分类错误的样本"
+        >
+          🎯 随机错例
+        </button>
       </div>
 
       <div v-if="currentData" class="sample-detail">
@@ -307,6 +371,43 @@ function selectFromGrid(item) {
   font-size: 15px;
   color: var(--color-text-light);
   font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+.scoring-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(108, 99, 255, 0.06);
+  border: 1px solid rgba(108, 99, 255, 0.15);
+  border-radius: 10px;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  font-size: 13px;
+}
+
+.scoring-spinner {
+  font-size: 16px;
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.scoring-label {
+  color: var(--color-text-light);
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  flex-shrink: 0;
+}
+
+.scoring-bar {
+  flex: 1;
+  height: 6px;
+  background: rgba(108, 99, 255, 0.12);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.scoring-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #6C63FF, #00D2FF);
+  transition: width 0.15s ease;
 }
 
 .stats-banner {
@@ -419,7 +520,8 @@ function selectFromGrid(item) {
 }
 
 .nav-btn,
-.random-btn {
+.random-btn,
+.wrong-btn {
   padding: 10px 20px;
   border-radius: var(--radius-sm);
   font-weight: 600;
@@ -428,12 +530,23 @@ function selectFromGrid(item) {
   color: var(--color-text);
 }
 
+.wrong-btn {
+  background: rgba(255, 82, 82, 0.08);
+  color: var(--color-danger, #FF5252);
+  border: 1px solid rgba(255, 82, 82, 0.25);
+}
+
 .nav-btn:hover,
 .random-btn:hover {
   background: var(--color-border);
 }
 
-.nav-btn:disabled {
+.wrong-btn:hover:not(:disabled) {
+  background: rgba(255, 82, 82, 0.16);
+}
+
+.nav-btn:disabled,
+.wrong-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
