@@ -1,5 +1,5 @@
 import { createApp } from 'vue'
-import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createWebHashHistory } from 'vue-router'
 import { createPinia } from 'pinia'
 import App from './App.vue'
 import './style.css'
@@ -12,16 +12,9 @@ const routes = [
 ]
 
 const router = createRouter({
-  history: createWebHistory('/c-tensor/'),
+  history: createWebHashHistory(),
   routes,
 })
-
-// Handle SPA redirect from 404.html
-const redirectPath = sessionStorage.getItem('spa-redirect')
-if (redirectPath) {
-  sessionStorage.removeItem('spa-redirect')
-  router.replace(redirectPath)
-}
 
 const app = createApp(App)
 app.use(createPinia())

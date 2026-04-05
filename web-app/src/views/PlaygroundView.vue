@@ -11,8 +11,7 @@ const modelError = ref(null)
 
 onMounted(async () => {
   try {
-    const weightsUrl = import.meta.env.DEV ? '/weights.bin' : '/c-tensor/weights.bin'
-    await inference.loadWeights(weightsUrl)
+    await inference.loadWeights('./weights.bin')
     modelReady.value = true
   } catch (e) {
     modelError.value = e.message
