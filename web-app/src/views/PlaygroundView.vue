@@ -54,7 +54,7 @@ function setupCanvas() {
   ctx.fillStyle = 'black'
   ctx.fillRect(0, 0, canvasSize, canvasSize)
   ctx.strokeStyle = 'white'
-  ctx.lineWidth = 24
+  ctx.lineWidth = 16
   ctx.lineCap = 'round'
   ctx.lineJoin = 'round'
 
@@ -154,7 +154,7 @@ function redrawCanvas() {
   ctx.fillStyle = 'black'
   ctx.fillRect(0, 0, canvasSize, canvasSize)
   ctx.strokeStyle = 'white'
-  ctx.lineWidth = 24
+  ctx.lineWidth = 16
   ctx.lineCap = 'round'
   ctx.lineJoin = 'round'
 
@@ -195,7 +195,7 @@ function getPixelData() {
   // 2. 按 bounding box 裁剪，保持宽高比缩放到 20x20 区域，居中放置到 28x28
   const bw = maxX - minX + 1
   const bh = maxY - minY + 1
-  const targetSize = 20  // MNIST 标准：数字占 20x20 区域
+  const targetSize = 18  // 数字占 18x18 区域（比 MNIST 标准 20x20 略小，给质心居中留出更多空间，避免 offset clamp 破坏居中）
   const scale = targetSize / Math.max(bw, bh)
   const scaledW = Math.round(bw * scale)
   const scaledH = Math.round(bh * scale)
