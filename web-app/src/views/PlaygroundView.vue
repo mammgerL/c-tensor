@@ -11,6 +11,7 @@ const isAnalyzing = ref(false)
 const result = ref(null)
 const hasDrawn = ref(false)
 const currentStep = ref(-1)
+const hoveredPixel = ref(null)
 
 const strokeHistory = reactive([])
 let currentStroke = []
@@ -258,7 +259,6 @@ function drawPixelGrid() {
   if (!canvas || !result.value) return
   const ctx = canvas.getContext('2d')
   const pixels = result.value.pixels
-  const sz = 14
   const cellW = canvas.width / gridSize
   const cellH = canvas.height / gridSize
 
@@ -271,6 +271,35 @@ function drawPixelGrid() {
       ctx.fillRect(x * cellW, y * cellH, cellW - 0.5, cellH - 0.5)
     }
   }
+
+  if (hoveredPixel.value) {
+    ctx.strokeStyle = '#6C63FF'
+    ctx.lineWidth = 2
+    ctx.strokeRect(hoveredPixel.value.col * cellW, hoveredPixel.value.row * cellH, cellW, cellH)
+  }
+}
+
+watch(hoveredPixel, () => { drawPixelGrid() })
+
+function handlePixelGridHover(e) {
+  const canvas = pixelGridRef.value
+  if (!canvas || !result.value) return
+  const rect = canvas.getBoundingClientRect()
+  const scaleX = canvas.width / rect.width
+  const scaleY = canvas.height / rect.height
+  const x = Math.floor((e.clientX - rect.left) * scaleX / (canvas.width / gridSize))
+  const y = Math.floor((e.clientY - rect.top) * scaleY / (canvas.height / gridSize))
+  if (x >= 0 && x < gridSize && y >= 0 && y < gridSize) {
+    const idx = y * gridSize + x
+    const val = result.value.pixels[idx]
+    hoveredPixel.value = { row: y, col: x, idx, val }
+  } else {
+    hoveredPixel.value = null
+  }
+}
+
+function handlePixelGridLeave() {
+  hoveredPixel.value = null
 }
 
 // Step visualization refs
@@ -469,7 +498,21 @@ const progressPercent = computed(() => {
 
         <div class="pixel-grid-section">
           <h3 class="section-label">28×28 像素矩阵 [1, 784]</h3>
-          <canvas ref="pixelGridRef" width="224" height="224" class="pixel-grid"></canvas>
+          <div class="pixel-grid-wrapper">
+            <canvas
+              ref="pixelGridRef"
+              width="224"
+              height="224"
+              class="pixel-grid"
+              @mousemove="handlePixelGridHover"
+              @mouseleave="handlePixelGridLeave"
+            ></canvas>
+            <div v-if="hoveredPixel" class="pixel-tooltip">
+              <span class="pixel-tooltip-coord">({{ hoveredPixel.row }}, {{ hoveredPixel.col }})</span>
+              <span class="pixel-tooltip-idx">索引: {{ hoveredPixel.idx }}</span>
+              <span class="pixel-tooltip-val">值: {{ hoveredPixel.val.toFixed(4) }}</span>
+            </div>
+          </div>
           <p class="grid-hint">黑色 = -1（背景），白色 = 1（笔画）</p>
         </div>
       </div>
@@ -666,7 +709,7 @@ const progressPercent = computed(() => {
 
           <!-- 真实计算过程展示 -->
           <ComputationTrace
-            v-if="result && currentStep >= 1"
+            v-if="result && currentStep >= 0"
             :step="currentStep"
             :result="result"
           />
@@ -809,12 +852,51 @@ int predicted = argmax(out->data->values); <span class="comment">// 取最大值
   box-shadow: var(--shadow-sm);
 }
 
+.pixel-grid-wrapper {
+  position: relative;
+  display: inline-block;
+  width: 100%;
+}
+
 .pixel-grid {
   width: 100%;
   aspect-ratio: 1;
   border-radius: 8px;
   image-rendering: pixelated;
   border: 1px solid var(--color-border);
+  cursor: crosshair;
+}
+
+.pixel-tooltip {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  background: rgba(30, 30, 46, 0.92);
+  color: #cdd6f4;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(4px);
+}
+
+.pixel-tooltip-coord {
+  color: #89b4fa;
+  font-weight: 600;
+}
+
+.pixel-tooltip-idx {
+  color: #a6e3a1;
+}
+
+.pixel-tooltip-val {
+  color: #f9e2af;
+  font-weight: 700;
 }
 
 .grid-hint {
