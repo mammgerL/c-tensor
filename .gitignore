@@ -9,7 +9,7 @@ data/
 
 # 模型文件
 *.bin
-!web-app/public/weights.bin
+!web-app/src/assets/weights.bin
 !html/weights.bin
 
 # macOS

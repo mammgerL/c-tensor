@@ -4,6 +4,7 @@ import ProbabilityChart from '../components/ProbabilityChart.vue'
 import NetworkVisual from '../components/NetworkVisual.vue'
 import ComputationTrace from '../components/ComputationTrace.vue'
 import { MnistInference } from '../inference.js'
+import weightsUrl from '../assets/weights.bin?url'
 
 const inference = new MnistInference()
 const modelReady = ref(false)
@@ -11,7 +12,7 @@ const modelError = ref(null)
 
 onMounted(async () => {
   try {
-    await inference.loadWeights('./weights.bin')
+    await inference.loadWeights(weightsUrl)
     modelReady.value = true
   } catch (e) {
     modelError.value = e.message
@@ -526,7 +527,7 @@ const progressPercent = computed(() => {
           <span class="error-icon">⚠️</span>
           <h3>模型加载失败</h3>
           <p class="error-message">{{ modelError }}</p>
-          <p class="error-hint">请确保 <code>weights.bin</code> 存在于 <code>web-app/public/</code> 目录下</p>
+          <p class="error-hint">请确保 <code>weights.bin</code> 存在于 <code>web-app/src/assets/</code> 目录下</p>
         </div>
 
         <div v-if="!modelReady && !modelError" class="result-placeholder">
