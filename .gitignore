@@ -10,6 +10,8 @@ data/
 # 模型文件
 *.bin
 !web-app/src/assets/weights.bin
+!web-app/src/assets/test_samples_1000.bin
+!web-app/src/assets/test_samples_10000.bin
 !html/weights.bin
 
 # macOS

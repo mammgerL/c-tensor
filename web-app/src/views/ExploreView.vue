@@ -1,76 +1,130 @@
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import DigitDisplay from '../components/DigitDisplay.vue'
 import ProbabilityChart from '../components/ProbabilityChart.vue'
 import ActivationHeatmap from '../components/ActivationHeatmap.vue'
 import NetworkVisual from '../components/NetworkVisual.vue'
+import { MnistInference, loadTestSamples, normalizePixels } from '../inference.js'
+import weightsUrl from '../assets/weights.bin?url'
+
+// In dev mode, load the full 10k test set; in production builds (e.g. GitHub
+// Pages) load a smaller 1k subset to keep the deployed bundle compact.
+// Vite treeshakes the unused dynamic import at build time via the static env check.
+const inference = new MnistInference()
 
 const currentIndex = ref(0)
 const currentData = ref(null)
-const isLoading = ref(false)
-const filter = ref('all')
+const isLoading = ref(true)
+const loadMessage = ref('加载权重和测试集…')
 const stats = ref(null)
 const sampleGrid = ref([])
-const showGrid = ref(true)
+const sampleCount = ref(0)
 
-const networkLayers = [
-  { name: 'input', label: '👀 输入层', size: 16, x: 80 },
-  { name: 'hidden', label: '🧠 隐藏层', size: 16, x: 300 },
-  { name: 'output', label: '🎯 输出层', size: 10, x: 520 },
-]
+// In-memory test data + slim prediction cache
+let samples = null  // { count, pixelsU8: Uint8Array, labels: Uint8Array }
+const predictions = []  // [{ predicted, correct }, ...], same length as samples.count
 
 onMounted(async () => {
-  await loadStats()
-  await loadSampleGrid()
-  await loadSample(0)
-})
-
-async function loadStats() {
   try {
-    const res = await fetch('/api/eval')
-    if (res.ok) stats.value = await res.json()
-  } catch (e) {
-    console.error('Failed to load stats:', e)
-  }
-}
+    loadMessage.value = '加载权重…'
+    await inference.loadWeights(weightsUrl)
 
-async function loadSampleGrid() {
-  try {
-    const promises = []
-    for (let i = 0; i < 50; i++) {
-      const idx = Math.floor(Math.random() * 10000)
-      promises.push(fetch(`/api/predict?index=${idx}`).then(r => r.json()).catch(() => null))
-    }
-    const results = await Promise.all(promises)
-    sampleGrid.value = results.filter(Boolean).map((d, i) => ({ ...d, gridIndex: i }))
-  } catch (e) {
-    console.error('Failed to load sample grid:', e)
-  }
-}
+    loadMessage.value = '加载测试样例…'
+    const samplesUrl = import.meta.env.DEV
+      ? (await import('../assets/test_samples_10000.bin?url')).default
+      : (await import('../assets/test_samples_1000.bin?url')).default
+    samples = await loadTestSamples(samplesUrl)
+    sampleCount.value = samples.count
 
-async function loadSample(index) {
-  isLoading.value = true
-  try {
-    const res = await fetch(`/api/predict?index=${index}`)
-    if (!res.ok) throw new Error('Failed')
-    currentData.value = await res.json()
-    currentIndex.value = index
+    loadMessage.value = `推理 ${samples.count.toLocaleString()} 个样例…`
+    await scoreAll()
+
+    loadSampleGrid()
+    loadSample(0)
   } catch (e) {
-    console.error('Failed to load sample:', e)
+    console.error('Failed to initialize explore view:', e)
+    loadMessage.value = `加载失败：${e.message}`
   } finally {
     isLoading.value = false
   }
+})
+
+async function scoreAll() {
+  // Batched loop with yields every few hundred samples so the UI thread
+  // can update the "loading" label and stay responsive on large sets.
+  const N = samples.count
+  let correct = 0
+  const CHUNK = 500
+  for (let start = 0; start < N; start += CHUNK) {
+    const end = Math.min(start + CHUNK, N)
+    for (let i = start; i < end; i++) {
+      const x = normalizePixels(samples.pixelsU8, i * 784, 784)
+      const { predicted } = inference.predictFast(x)
+      const isCorrect = predicted === samples.labels[i]
+      predictions[i] = { predicted, correct: isCorrect }
+      if (isCorrect) correct++
+    }
+    loadMessage.value = `推理中 ${end.toLocaleString()} / ${N.toLocaleString()}…`
+    await new Promise(r => setTimeout(r, 0))  // yield to paint loop
+  }
+  stats.value = {
+    total: N,
+    correct,
+    incorrect: N - correct,
+    accuracy: (correct / N) * 100,
+  }
+}
+
+function predictDetailed(index) {
+  const x = normalizePixels(samples.pixelsU8, index * 784, 784)
+  const result = inference.predict(x)
+  return {
+    index,
+    true_label: samples.labels[index],
+    predicted: result.predicted,
+    correct: result.predicted === samples.labels[index],
+    confidence: result.confidence,
+    pixels: result.pixels,
+    hidden: result.hidden,
+    pre_relu: result.pre_relu,
+    output: result.output,
+    pre_softmax: result.pre_softmax,
+  }
+}
+
+function loadSample(index) {
+  if (index < 0 || index >= sampleCount.value) return
+  currentData.value = predictDetailed(index)
+  currentIndex.value = index
+}
+
+function loadSampleGrid() {
+  const picks = new Set()
+  const count = Math.min(50, sampleCount.value)
+  while (picks.size < count) {
+    picks.add(Math.floor(Math.random() * sampleCount.value))
+  }
+  sampleGrid.value = Array.from(picks).map((idx, gridIndex) => {
+    const p = predictions[idx]
+    return {
+      gridIndex,
+      index: idx,
+      true_label: samples.labels[idx],
+      predicted: p.predicted,
+      correct: p.correct,
+    }
+  })
 }
 
 function navigate(dir) {
   const next = currentIndex.value + dir
-  if (next >= 0 && next < 10000) {
+  if (next >= 0 && next < sampleCount.value) {
     loadSample(next)
   }
 }
 
 function randomSample() {
-  loadSample(Math.floor(Math.random() * 10000))
+  loadSample(Math.floor(Math.random() * sampleCount.value))
 }
 
 function selectFromGrid(item) {
@@ -84,8 +138,22 @@ function selectFromGrid(item) {
   <div class="explore-view">
     <header class="page-header">
       <h1>🔍 探索数据集</h1>
-      <p class="page-desc">浏览 10000 个手写数字，看看 AI 是怎么认出来的！</p>
+      <p class="page-desc">
+        浏览
+        <strong>{{ sampleCount.toLocaleString() }}</strong>
+        个手写数字，看看 AI 是怎么认出来的！
+        <span class="page-desc-env">
+          ({{ sampleCount >= 10000 ? '本地开发模式：全量 10,000 个样例' : '生产模式：1,000 个样例' }})
+        </span>
+      </p>
     </header>
+
+    <div v-if="isLoading" class="init-loading">
+      <span class="loading-spinner">⏳</span>
+      <p>{{ loadMessage }}</p>
+    </div>
+
+    <template v-else>
 
     <div v-if="stats" class="stats-banner">
       <div class="stat-item">
@@ -146,21 +214,16 @@ function selectFromGrid(item) {
             v-model.number="currentIndex"
             @change="loadSample(currentIndex)"
             min="0"
-            max="9999"
+            :max="sampleCount - 1"
             class="index-input"
           />
-          <span class="index-range">/ 10000</span>
+          <span class="index-range">/ {{ sampleCount.toLocaleString() }}</span>
         </div>
-        <button class="nav-btn" @click="navigate(1)" :disabled="currentIndex >= 9999">下一个 →</button>
+        <button class="nav-btn" @click="navigate(1)" :disabled="currentIndex >= sampleCount - 1">下一个 →</button>
         <button class="random-btn" @click="randomSample">🎲 随机</button>
       </div>
 
-      <div v-if="isLoading" class="loading-state">
-        <span class="loading-spinner">⏳</span>
-        <p>加载中...</p>
-      </div>
-
-      <div v-else-if="currentData" class="sample-detail">
+      <div v-if="currentData" class="sample-detail">
         <div class="detail-grid">
           <div class="detail-left">
             <DigitDisplay
@@ -195,6 +258,8 @@ function selectFromGrid(item) {
         </div>
       </div>
     </div>
+
+    </template>
   </div>
 </template>
 
@@ -219,6 +284,29 @@ function selectFromGrid(item) {
 .page-desc {
   font-size: 18px;
   color: var(--color-text-light);
+}
+
+.page-desc-env {
+  display: inline-block;
+  margin-left: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-primary);
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: rgba(108, 99, 255, 0.1);
+}
+
+.init-loading {
+  text-align: center;
+  padding: 80px 20px;
+}
+
+.init-loading p {
+  margin-top: 16px;
+  font-size: 15px;
+  color: var(--color-text-light);
+  font-family: 'SF Mono', 'Fira Code', monospace;
 }
 
 .stats-banner {
