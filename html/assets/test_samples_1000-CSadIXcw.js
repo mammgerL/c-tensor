@@ -1,0 +1,1 @@
+var e=``+new URL(`test_samples_1000-DBox_HY6.bin`,import.meta.url).href;export{e as default};

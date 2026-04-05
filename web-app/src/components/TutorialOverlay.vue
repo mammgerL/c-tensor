@@ -13,7 +13,7 @@ const currentStep = ref(0)
 
 const steps = [
   {
-    title: '欢迎来到 AI 小学堂！🎉',
+    title: '欢迎来到 C-Tensor！🎉',
     content: '在这里，你会学到人工智能的神奇知识，还能亲手画出数字让 AI 来猜！准备好了吗？',
     emoji: '🚀',
   },

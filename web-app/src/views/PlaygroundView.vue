@@ -4,7 +4,6 @@ import ProbabilityChart from '../components/ProbabilityChart.vue'
 import NetworkVisual from '../components/NetworkVisual.vue'
 import ComputationTrace from '../components/ComputationTrace.vue'
 import { MnistInference } from '../inference.js'
-import weightsUrl from '../assets/weights.bin?url'
 
 const inference = new MnistInference()
 const modelReady = ref(false)
@@ -12,7 +11,7 @@ const modelError = ref(null)
 
 onMounted(async () => {
   try {
-    await inference.loadWeights(weightsUrl)
+    await inference.loadWeights('./weights.bin')
     modelReady.value = true
   } catch (e) {
     modelError.value = e.message

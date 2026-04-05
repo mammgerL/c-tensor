@@ -5,11 +5,7 @@ import ProbabilityChart from '../components/ProbabilityChart.vue'
 import ActivationHeatmap from '../components/ActivationHeatmap.vue'
 import NetworkVisual from '../components/NetworkVisual.vue'
 import { MnistInference, loadTestSamples, normalizePixels } from '../inference.js'
-import weightsUrl from '../assets/weights.bin?url'
 
-// In dev mode, load the full 10k test set; in production builds (e.g. GitHub
-// Pages) load a smaller 1k subset to keep the deployed bundle compact.
-// Vite treeshakes the unused dynamic import at build time via the static env check.
 const inference = new MnistInference()
 
 const currentIndex = ref(0)
@@ -29,7 +25,7 @@ const scoringProgress = ref(null)  // { done, total } while background scoring r
 onMounted(async () => {
   try {
     loadMessage.value = '加载权重…'
-    await inference.loadWeights(weightsUrl)
+    await inference.loadWeights('./weights.bin')
 
     loadMessage.value = '加载测试样例…'
     const samplesUrl = import.meta.env.DEV
