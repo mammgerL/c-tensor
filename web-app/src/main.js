@@ -12,9 +12,16 @@ const routes = [
 ]
 
 const router = createRouter({
-  history: createWebHistory(),
+  history: createWebHistory('/c-tensor/'),
   routes,
 })
+
+// Handle SPA redirect from 404.html
+const redirectPath = sessionStorage.getItem('spa-redirect')
+if (redirectPath) {
+  sessionStorage.removeItem('spa-redirect')
+  router.replace(redirectPath)
+}
 
 const app = createApp(App)
 app.use(createPinia())
