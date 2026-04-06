@@ -53,6 +53,28 @@ const weightGrid = [
   [-.1,  0,  .1,  .3,  .2,   0, -.1],
 ]
 
+// ── Matmul worked example (4×3 for illustration) ────────────────────
+// Real network: x [1,784] × W1 [784,256] = h [1,256]
+// Toy example:  x [1,4]   × W  [4,3]     = h [1,3]
+const matmulX = [0.8, -1.0, 0.5, -0.3]
+const matmulW = [
+  [ 0.2, -0.1,  0.4],
+  [ 0.3,  0.5, -0.2],
+  [-0.1,  0.3,  0.1],
+  [ 0.4, -0.2,  0.6],
+]
+// h[j] = Σ x[i] * W[i][j]
+const matmulH = matmulW[0].map((_, j) => {
+  const terms = matmulX.map((xi, i) => xi * matmulW[i][j])
+  return { terms, sum: terms.reduce((a, b) => a + b, 0) }
+})
+const matmulHighlight = ref(0) // which output column to highlight
+
+// Bias + ReLU continuation of the matmul example
+const biasB = [0.10, -0.20, 0.05]
+const afterBias = matmulH.map((h, j) => h.sum + biasB[j])
+const afterRelu = afterBias.map(v => Math.max(0, v))
+
 // Softmax output bars for a "7"
 const softmaxBars = [
   { digit: 0, prob: 0.002 },
@@ -95,13 +117,13 @@ const intuitions = [
   {
     num: '01',
     title: '一个"神经元"就是一个数字',
-    body: '输入层的 784 个神经元，是 28×28 每个像素的亮度 (0 ~ 1)。输出层的 10 个神经元，分别代表"这是 0 的信心、是 1 的信心…是 9 的信心"。隐藏层的 256 个神经元呢？—— 那正是网络要"学出来"的东西。',
+    body: '输入层的 784 个神经元，是 28×28 每个像素归一化后的值 (−1 ~ 1，−1 = 黑色背景，+1 = 白色笔画)。输出层的 10 个神经元，分别代表"这是 0 的信心、是 1 的信心…是 9 的信心"。隐藏层的 256 个神经元呢？—— 那正是网络要"学出来"的东西。',
     visual: 'neurons',
   },
   {
     num: '02',
     title: '每个神经元在"寻找"一种模式',
-    body: '一个隐藏层神经元接收全部 784 个输入，每个输入配一个权重 w。正权重说"我在乎这里亮"，负权重说"我在乎这里暗"，接近 0 说"我不关心"。把这 784 个权重排回 28×28，就是这个神经元在"找"的那张图。',
+    body: '一个隐藏层神经元接收全部 784 个输入，每个输入配一个权重 w。正权重表示"这个位置越亮越好"，负权重表示"这个位置越暗越好"，接近 0 表示"这个位置无所谓"。把 784 个权重排回 28×28，就是这个神经元在寻找的模式。',
     visual: 'weights',
   },
   {
@@ -362,8 +384,8 @@ function navigate(path) {
                 </div>
               </div>
               <div class="weight-pattern-legend">
-                <span><span class="wp-swatch wp-pos"></span> 正权重："这里要亮"</span>
-                <span><span class="wp-swatch wp-neg"></span> 负权重："这里要暗"</span>
+                <span><span class="wp-swatch wp-pos"></span> 正权重：越亮越好</span>
+                <span><span class="wp-swatch wp-neg"></span> 负权重：越暗越好</span>
               </div>
             </div>
           </div>
@@ -395,6 +417,193 @@ function navigate(path) {
           神经元学到的是我们说不清楚的特征。而它就是有效。
           这就是深度学习让人又爱又困惑的地方。
         </p>
+      </div>
+    </section>
+
+    <section class="matmul-section">
+      <h2 class="section-title">深入理解：矩阵乘法到底在算什么？</h2>
+      <p class="section-subtitle">
+        用一个 [1,4] × [4,3] = [1,3] 的小例子拆解过程。真实网络是 [1,784] × [784,256] = [1,256]，原理完全一样，只是更大。
+      </p>
+      <div class="matmul-card">
+        <!-- 三个矩阵并排 -->
+        <div class="matmul-layout">
+          <!-- x 向量 -->
+          <div class="mat-block">
+            <div class="mat-label">输入 x <span class="mat-shape">[1, 4]</span></div>
+            <div class="mat-grid mat-row">
+              <div v-for="(v, i) in matmulX" :key="'x-' + i"
+                class="mat-cell mat-x"
+                :class="{ 'mat-active': true }"
+              >{{ v }}</div>
+            </div>
+          </div>
+
+          <span class="mat-op">×</span>
+
+          <!-- W 矩阵 -->
+          <div class="mat-block">
+            <div class="mat-label">权重 W <span class="mat-shape">[4, 3]</span></div>
+            <div class="mat-grid mat-cols">
+              <div v-for="(row, r) in matmulW" :key="'w-' + r" class="mat-grid-row">
+                <div v-for="(v, c) in row" :key="'wc-' + c"
+                  class="mat-cell mat-w"
+                  :class="{ 'mat-col-hi': c === matmulHighlight }"
+                >{{ v }}</div>
+              </div>
+            </div>
+          </div>
+
+          <span class="mat-op">=</span>
+
+          <!-- h 向量 -->
+          <div class="mat-block">
+            <div class="mat-label">输出 h <span class="mat-shape">[1, 3]</span></div>
+            <div class="mat-grid mat-row">
+              <div v-for="(h, j) in matmulH" :key="'h-' + j"
+                class="mat-cell mat-h"
+                :class="{ 'mat-col-hi': j === matmulHighlight }"
+                @mouseenter="matmulHighlight = j"
+              >{{ h.sum.toFixed(2) }}</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 展开计算过程 -->
+        <div class="matmul-detail">
+          <div class="matmul-detail-tabs">
+            <button v-for="j in 3" :key="j"
+              :class="['matmul-tab', { active: matmulHighlight === j - 1 }]"
+              @click="matmulHighlight = j - 1"
+            >h[{{ j - 1 }}]</button>
+          </div>
+          <div class="matmul-computation">
+            <div class="comp-title">
+              h[{{ matmulHighlight }}] = x 的每一项 × W 第 {{ matmulHighlight }} 列的对应项，然后求和：
+            </div>
+            <div class="comp-terms">
+              <span v-for="(t, i) in matmulH[matmulHighlight].terms" :key="i" class="comp-term">
+                <span class="comp-operand">{{ matmulX[i] }}</span>
+                <span class="comp-times">×</span>
+                <span class="comp-operand">{{ matmulW[i][matmulHighlight] }}</span>
+                <span class="comp-eq">=</span>
+                <span class="comp-result" :class="{ pos: t >= 0, neg: t < 0 }">{{ t >= 0 ? '+' : '' }}{{ t.toFixed(2) }}</span>
+              </span>
+            </div>
+            <div class="comp-sum">
+              求和：{{ matmulH[matmulHighlight].terms.map(t => (t >= 0 ? '+' : '') + t.toFixed(2)).join(' ') }}
+              = <strong>{{ matmulH[matmulHighlight].sum.toFixed(2) }}</strong>
+            </div>
+          </div>
+        </div>
+
+        <!-- 对应到真实网络 -->
+        <div class="matmul-real">
+          <div class="matmul-real-arrow">↓ 放大到真实网络</div>
+          <div class="matmul-real-grid">
+            <div class="real-item">
+              <span class="real-label">输入</span>
+              <span class="real-val">[1, 4] → <strong>[1, 784]</strong></span>
+              <span class="real-desc">4 个像素 → 28×28 = 784 个像素</span>
+            </div>
+            <div class="real-item">
+              <span class="real-label">权重</span>
+              <span class="real-val">[4, 3] → <strong>[784, 256]</strong></span>
+              <span class="real-desc">3 个神经元 → 256 个神经元，每个做 784 次乘加</span>
+            </div>
+            <div class="real-item">
+              <span class="real-label">输出</span>
+              <span class="real-val">[1, 3] → <strong>[1, 256]</strong></span>
+              <span class="real-desc">3 个特征 → 256 个特征</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 偏置 + ReLU 计算举例 -->
+        <div class="bias-relu-box">
+          <h4 class="bias-title">第二步：加偏置 + ReLU 激活</h4>
+          <p class="bias-desc">矩阵乘法只完成了"加权求和"，还需要加偏置再过 ReLU，才得到隐藏层的最终输出。</p>
+
+          <div class="bias-steps">
+            <!-- matmul result -->
+            <div class="bias-step">
+              <span class="bias-label">矩阵乘法结果 h</span>
+              <div class="bias-vec">
+                <span v-for="(h, j) in matmulH" :key="'bh-' + j" class="bias-cell">{{ h.sum.toFixed(2) }}</span>
+              </div>
+            </div>
+
+            <div class="bias-op">+</div>
+
+            <!-- bias -->
+            <div class="bias-step">
+              <span class="bias-label">偏置 b</span>
+              <div class="bias-vec">
+                <span v-for="(b, j) in biasB" :key="'bb-' + j" class="bias-cell bias-b">{{ b >= 0 ? '+' : '' }}{{ b.toFixed(2) }}</span>
+              </div>
+            </div>
+
+            <div class="bias-op">=</div>
+
+            <!-- after bias -->
+            <div class="bias-step">
+              <span class="bias-label">加偏置后</span>
+              <div class="bias-vec">
+                <span v-for="(v, j) in afterBias" :key="'ab-' + j" class="bias-cell" :class="{ 'neg': v < 0 }">{{ v.toFixed(2) }}</span>
+              </div>
+            </div>
+
+            <div class="bias-op relu-arrow">→ ReLU →</div>
+
+            <!-- after ReLU -->
+            <div class="bias-step">
+              <span class="bias-label">最终输出</span>
+              <div class="bias-vec">
+                <span v-for="(v, j) in afterRelu" :key="'ar-' + j" class="bias-cell" :class="{ 'zero': v === 0, 'pos': v > 0 }">{{ v.toFixed(2) }}</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="bias-explain">
+            <p>ReLU 把负数变成 0 — 这就是"激活"：只有正向信号才能传递到下一层。</p>
+            <p>3 个输出中有 2 个被抑制，只有 <strong>h[2] = 0.44</strong> 存活下来。</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="weights-section">
+      <h2 class="section-title">打开黑盒：网络里到底存了什么？</h2>
+      <p class="section-subtitle">
+        "训练好的网络"其实就是下面这 4 个张量里的 203,530 个具体浮点数。下面是本项目真实训练后的数据。
+      </p>
+      <div class="weights-grid">
+        <div v-for="w in weights" :key="w.name" class="weight-card">
+          <div class="weight-head">
+            <span class="weight-name">{{ w.name }}</span>
+            <span class="weight-shape">{{ w.shape }}</span>
+          </div>
+          <p class="weight-role">{{ w.role }}</p>
+          <div class="weight-stats">
+            <div class="weight-stat">
+              <span class="stat-label">数值范围</span>
+              <span class="stat-value">{{ w.min }} ~ {{ w.max }}</span>
+            </div>
+            <div class="weight-stat">
+              <span class="stat-label">参数个数</span>
+              <span class="stat-value">{{ w.count }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="weights-notes">
+        <h3 class="notes-title">从这组数字里能看出什么？</h3>
+        <ul>
+          <li><strong>b1、b2 都非常接近 0</strong>（最大也就 ±0.01）—— 训练出来的神经元"挑剔程度"其实都差不多，偏置只做微调。</li>
+          <li><strong>W1 的值域 (±0.16) 比 W2 (±0.40) 小</strong> —— Kaiming 初始化按 <code>√(2/fan_in)</code> 缩放，784 个输入的扇入让 W1 一开始就被压得比较小，训练过程也保持了这个量级。</li>
+          <li><strong>W1 每一列排回 28×28 后，并不像边缘或笔画检测器</strong> —— 更像是有一定结构的噪声。这就是 3Blue1Brown 系列里说的"愿望 vs 现实"。</li>
+          <li>想亲眼看看这些数字怎么工作？<a href="#" @click.prevent="navigate('/playground')">去 Playground</a> 画一个数字，每一个神经元被激活了多少都是实时计算出来的。</li>
+        </ul>
       </div>
     </section>
 
@@ -458,41 +667,6 @@ function navigate(path) {
             <pre>{{ item.example }}</pre>
           </details>
         </article>
-      </div>
-    </section>
-
-    <section class="weights-section">
-      <h2 class="section-title">打开黑盒：网络里到底存了什么？</h2>
-      <p class="section-subtitle">
-        "训练好的网络"其实就是下面这 4 个张量里的 203,530 个具体浮点数。下面是本项目真实训练后的数据。
-      </p>
-      <div class="weights-grid">
-        <div v-for="w in weights" :key="w.name" class="weight-card">
-          <div class="weight-head">
-            <span class="weight-name">{{ w.name }}</span>
-            <span class="weight-shape">{{ w.shape }}</span>
-          </div>
-          <p class="weight-role">{{ w.role }}</p>
-          <div class="weight-stats">
-            <div class="weight-stat">
-              <span class="stat-label">数值范围</span>
-              <span class="stat-value">{{ w.min }} ~ {{ w.max }}</span>
-            </div>
-            <div class="weight-stat">
-              <span class="stat-label">参数个数</span>
-              <span class="stat-value">{{ w.count }}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div class="weights-notes">
-        <h3 class="notes-title">从这组数字里能看出什么？</h3>
-        <ul>
-          <li><strong>b1、b2 都非常接近 0</strong>（最大也就 ±0.01）—— 训练出来的神经元"挑剔程度"其实都差不多，偏置只做微调。</li>
-          <li><strong>W1 的值域 (±0.16) 比 W2 (±0.40) 小</strong> —— Kaiming 初始化按 <code>√(2/fan_in)</code> 缩放，784 个输入的扇入让 W1 一开始就被压得比较小，训练过程也保持了这个量级。</li>
-          <li><strong>W1 每一列排回 28×28 后，并不像边缘或笔画检测器</strong> —— 更像是有一定结构的噪声。这就是 3Blue1Brown 系列里说的"愿望 vs 现实"。</li>
-          <li>想亲眼看看这些数字怎么工作？<a href="#" @click.prevent="navigate('/playground')">去 Playground</a> 画一个数字，每一个神经元被激活了多少都是实时计算出来的。</li>
-        </ul>
       </div>
     </section>
 
@@ -791,6 +965,401 @@ function navigate(path) {
 .prob-pct.highlight {
   color: #6C63FF;
   font-weight: 700;
+}
+
+/* ── Matmul deep-dive ── */
+.matmul-section {
+  margin-bottom: 60px;
+}
+
+.matmul-card {
+  background: var(--color-card);
+  border-radius: 16px;
+  padding: 28px 24px;
+  box-shadow: var(--shadow-sm);
+}
+
+.matmul-layout {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+}
+
+.mat-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.mat-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.mat-shape {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-light);
+  margin-left: 4px;
+}
+
+.mat-op {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--color-text-light);
+  padding: 0 4px;
+}
+
+.mat-grid-row {
+  display: flex;
+  gap: 3px;
+}
+
+.mat-cols {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.mat-row {
+  display: flex;
+  gap: 3px;
+}
+
+.mat-cell {
+  width: 48px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 12px;
+  font-weight: 600;
+  transition: all 0.15s ease;
+}
+
+.mat-x {
+  background: rgba(108, 99, 255, 0.12);
+  color: #6C63FF;
+}
+
+.mat-w {
+  background: rgba(0, 0, 0, 0.04);
+  color: var(--color-text);
+}
+
+.mat-w.mat-col-hi {
+  background: rgba(255, 107, 157, 0.15);
+  color: #FF6B9D;
+}
+
+.mat-h {
+  background: rgba(0, 210, 255, 0.12);
+  color: #00A5CC;
+  cursor: pointer;
+}
+
+.mat-h.mat-col-hi {
+  background: rgba(0, 210, 255, 0.25);
+  box-shadow: 0 0 0 2px rgba(0, 210, 255, 0.4);
+}
+
+/* Computation detail */
+.matmul-detail {
+  background: var(--color-bg);
+  border-radius: 12px;
+  padding: 16px 20px;
+  margin-bottom: 20px;
+}
+
+.matmul-detail-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.matmul-tab {
+  padding: 5px 14px;
+  border-radius: 6px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--color-card);
+  color: var(--color-text-light);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.matmul-tab.active {
+  background: rgba(0, 210, 255, 0.15);
+  color: #00A5CC;
+  box-shadow: 0 0 0 1.5px rgba(0, 210, 255, 0.3);
+}
+
+.comp-title {
+  font-size: 13px;
+  color: var(--color-text-light);
+  margin-bottom: 12px;
+  line-height: 1.5;
+}
+
+.comp-terms {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.comp-term {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 13px;
+}
+
+.comp-operand {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 42px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+.comp-term:nth-child(odd) .comp-operand:first-child {
+  background: rgba(108, 99, 255, 0.1);
+  color: #6C63FF;
+}
+
+.comp-operand:nth-child(3) {
+  background: rgba(255, 107, 157, 0.1);
+  color: #FF6B9D;
+}
+
+.comp-times, .comp-eq {
+  color: var(--color-text-light);
+  font-weight: 400;
+}
+
+.comp-result {
+  font-weight: 700;
+  min-width: 48px;
+  text-align: right;
+}
+
+.comp-result.pos { color: #4CAF50; }
+.comp-result.neg { color: #FF5252; }
+
+.comp-sum {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 13px;
+  color: var(--color-text);
+  padding-top: 10px;
+  border-top: 1px dashed var(--color-border, rgba(0,0,0,0.08));
+  line-height: 1.6;
+}
+
+.comp-sum strong {
+  color: #00A5CC;
+  font-size: 15px;
+}
+
+/* Real network scale comparison */
+.matmul-real {
+  text-align: center;
+}
+
+.matmul-real-arrow {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-primary);
+  margin-bottom: 12px;
+}
+
+.matmul-real-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.real-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px;
+  background: var(--color-bg);
+  border-radius: 10px;
+}
+
+.real-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--color-text-light);
+  text-transform: uppercase;
+}
+
+.real-val {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 13px;
+  color: var(--color-text);
+}
+
+.real-val strong {
+  color: var(--color-primary);
+}
+
+.real-desc {
+  font-size: 11.5px;
+  color: var(--color-text-light);
+  line-height: 1.5;
+}
+
+@media (max-width: 768px) {
+  .matmul-layout {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .matmul-real-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .mat-op {
+    font-size: 18px;
+  }
+}
+
+.bias-relu-box {
+  margin-top: 32px;
+  padding: 24px 28px;
+  background: var(--color-card);
+  border-radius: 14px;
+  border: 1px solid var(--color-border, #e5e7eb);
+}
+
+.bias-title {
+  font-size: 17px;
+  font-weight: 700;
+  margin: 0 0 6px;
+}
+
+.bias-desc {
+  font-size: 14px;
+  color: var(--color-text-light);
+  margin: 0 0 20px;
+}
+
+.bias-steps {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.bias-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.bias-label {
+  font-size: 12px;
+  color: var(--color-text-light);
+  font-weight: 600;
+}
+
+.bias-vec {
+  display: flex;
+  gap: 4px;
+}
+
+.bias-cell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 52px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  font-family: 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 14px;
+  font-weight: 600;
+  background: #f0f0ff;
+  color: #333;
+}
+
+.bias-cell.bias-b {
+  background: #fff3e0;
+  color: #e65100;
+}
+
+.bias-cell.neg {
+  background: #ffebee;
+  color: #c62828;
+}
+
+.bias-cell.zero {
+  background: #f5f5f5;
+  color: #999;
+}
+
+.bias-cell.pos {
+  background: #e8f5e9;
+  color: #2e7d32;
+  font-weight: 700;
+}
+
+.bias-op {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--color-text-light);
+  padding: 0 2px;
+}
+
+.bias-op.relu-arrow {
+  font-size: 14px;
+  color: #6C63FF;
+  white-space: nowrap;
+}
+
+.bias-explain {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--color-border, #e5e7eb);
+  font-size: 14px;
+  color: var(--color-text-light);
+  line-height: 1.7;
+}
+
+.bias-explain p {
+  margin: 0 0 4px;
+}
+
+@media (max-width: 700px) {
+  .bias-steps {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .bias-op {
+    font-size: 16px;
+  }
+
+  .bias-cell {
+    min-width: 44px;
+    font-size: 12px;
+  }
 }
 
 .intuition-section {
