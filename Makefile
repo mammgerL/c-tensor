@@ -88,16 +88,6 @@ emnist_digits_train.csv emnist_digits_test.csv: create_emnist_csv.py emnist-raw
 EMNIST_MODEL := emnist_digits_mlp.bin
 EMNIST_WEB_PREFIX := emnist_samples
 
-# 生成独立的 playground 风格合成手写数据
-PLAYGROUND_DATA_DIR := generated/playground_handwritten
-PLAYGROUND_DATA_CSV := $(PLAYGROUND_DATA_DIR)/playground_handwritten_train.csv
-
-playground-data: $(PLAYGROUND_DATA_CSV)
-
-$(PLAYGROUND_DATA_CSV): generate_handwritten.py
-	mkdir -p $(PLAYGROUND_DATA_DIR)
-	python3 generate_handwritten.py --count 10000 --output $(PLAYGROUND_DATA_CSV) --preview --preview-dir $(PLAYGROUND_DATA_DIR)/preview
-
 # 仅训练
 train-run: train data
 	./train
@@ -144,7 +134,6 @@ help:
 	@echo "  data       - 生成 MNIST CSV 数据集"
 	@echo "  emnist-raw - 下载 EMNIST Digits 原始 gzip 文件（仅 digits 子集）"
 	@echo "  emnist-data - 生成 EMNIST Digits CSV 数据集"
-	@echo "  playground-data - 生成独立的 playground 风格合成手写数据"
 	@echo "  run        - 完整流程: 数据准备 + 训练 + 评估"
 	@echo "  train-run  - 编译并运行训练"
 	@echo "  eval-run   - 编译并运行评估"
@@ -165,4 +154,4 @@ help:
 	@echo "编译选项: $(CFLAGS)"
 	@echo "链接选项: $(LDFLAGS)"
 
-.PHONY: all openmp run data emnist-data playground-data train-run eval-run emnist-train-run emnist-eval-run emnist-web-data clean cleanall debug help
+.PHONY: all openmp run data emnist-data train-run eval-run emnist-train-run emnist-eval-run emnist-web-data clean cleanall debug help

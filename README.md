@@ -85,18 +85,6 @@ make emnist-data
 和下载整个 `EMNIST gzip.zip` 大包相比，这条链路只拉 digits 子集，更省时间。
 导出时默认会应用一次方向修正，使样本朝向与 MNIST 更一致。
 
-如果你想单独生成更接近网页 `playground` 鼠标画板风格的合成样本，而不改动原始 MNIST 数据集：
-
-```bash
-make playground-data
-```
-
-这会额外生成：
-- `generated/playground_handwritten/playground_handwritten_train.csv`
-- `generated/playground_handwritten/preview/`
-
-这批数据会先在 `280×280` 黑底画布上画白色笔画，再使用和前端类似的裁剪、缩放、质心居中与模糊流程导出成 `28×28` 输入。
-
 ### 4. 训练模型
 
 ```bash
@@ -234,7 +222,6 @@ void kaiming_uniform_(Arr *arr, int fan_in);
 | `make data` | 生成 MNIST 数据集 |
 | `make emnist-raw` | 下载 EMNIST Digits 原始 gzip 文件（仅 digits 子集） |
 | `make emnist-data` | 生成 EMNIST Digits 数据集 |
-| `make playground-data` | 生成独立的 playground 风格合成手写数据 |
 | `make run` | 完整流程：数据 → 训练 → 评估 |
 | `make train-run` | 编译并运行训练 |
 | `make eval-run` | 编译并运行评估 |

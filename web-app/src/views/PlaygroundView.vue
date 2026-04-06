@@ -6,29 +6,11 @@ import ComputationTrace from '../components/ComputationTrace.vue'
 import { MnistInference } from '../inference.js'
 
 const inference = new MnistInference()
-const MODEL_OPTIONS = [
-  {
-    key: 'mnist',
-    name: 'MNIST 标准模型',
-    url: './weights.bin',
-    description: '原始 MNIST 训练模型，泛化到标准手写数字最好。',
-  },
-  {
-    key: 'playground',
-    name: 'Playground 合成模型',
-    url: './playground_weights.bin',
-    description: '只用 playground 风格合成数据训练，更贴近当前画板预处理。',
-  },
-]
-
-const currentModelKey = ref('mnist')
+const MODEL_KEY = 'mnist'
+const MODEL_URL = './weights.bin'
 const modelReady = ref(false)
 const modelError = ref(null)
 let modelLoadVersion = 0
-
-const currentModel = computed(() => {
-  return MODEL_OPTIONS.find(model => model.key === currentModelKey.value) || MODEL_OPTIONS[0]
-})
 
 onMounted(async () => {
   await loadSelectedModel(false)
@@ -428,7 +410,7 @@ async function loadSelectedModel(rerun = true) {
   apiError.value = null
 
   try {
-    await inference.loadWeights(currentModel.value.url)
+    await inference.loadWeights(MODEL_URL)
     if (version !== modelLoadVersion) return
     modelReady.value = true
 
@@ -444,14 +426,10 @@ async function loadSelectedModel(rerun = true) {
   }
 }
 
-async function changeModel() {
-  await loadSelectedModel(true)
-}
-
 function runPrediction(pixels) {
   result.value = inference.predict(pixels)
   console.log('Inference result:', {
-    model: currentModel.value.key,
+    model: MODEL_KEY,
     predicted: result.value.predicted,
     confidence: result.value.confidence,
   })
@@ -523,15 +501,7 @@ const progressPercent = computed(() => {
     <header class="page-header">
       <h1>📐 矩阵计算演示</h1>
       <p class="page-desc">手写一个数字，逐步查看 784→256→10 的完整计算过程</p>
-      <div class="model-switcher">
-        <label class="model-label" for="model-select">推理模型</label>
-        <select id="model-select" v-model="currentModelKey" class="model-select" @change="changeModel">
-          <option v-for="model in MODEL_OPTIONS" :key="model.key" :value="model.key">
-            {{ model.name }}
-          </option>
-        </select>
-        <p class="model-description">{{ currentModel.description }}</p>
-      </div>
+      <p class="model-description">当前使用 MNIST 标准模型进行推理演示。</p>
     </header>
 
     <div class="main-layout">
@@ -585,7 +555,7 @@ const progressPercent = computed(() => {
           <span class="error-icon">⚠️</span>
           <h3>模型加载失败</h3>
           <p class="error-message">{{ modelError }}</p>
-          <p class="error-hint">请确保 <code>{{ currentModel.url }}</code> 存在于 <code>web-app/public/</code> 目录下</p>
+          <p class="error-hint">请确保 <code>{{ MODEL_URL }}</code> 存在于 <code>web-app/public/</code> 目录下</p>
         </div>
 
         <div v-if="!modelReady && !modelError" class="result-placeholder">
@@ -837,37 +807,9 @@ int predicted = argmax(out->data->values); <span class="comment">// 取最大值
   margin-bottom: 32px;
 }
 
-.model-switcher {
+.model-description {
   margin: 18px auto 0;
   max-width: 560px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-}
-
-.model-label {
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--color-text-light);
-}
-
-.model-select {
-  min-width: 320px;
-  padding: 12px 14px;
-  border-radius: 12px;
-  border: 1px solid rgba(108, 99, 255, 0.24);
-  background: var(--color-card);
-  color: var(--color-text);
-  font-size: 15px;
-  font-weight: 700;
-  box-shadow: var(--shadow-sm);
-}
-
-.model-description {
-  margin: 0;
   font-size: 14px;
   color: var(--color-text-light);
 }

@@ -34,7 +34,7 @@ TEST_LABELS = "emnist-digits-test-labels-idx1-ubyte.gz"
 
 
 def orient_like_mnist(image_arr):
-    image = Image.fromarray(image_arr, mode="L")
+    image = Image.fromarray(image_arr)
     image = image.transpose(Image.Transpose.FLIP_LEFT_RIGHT).rotate(90, expand=False)
     return np.array(image, dtype=np.uint8)
 

@@ -7,25 +7,8 @@ import NetworkVisual from '../components/NetworkVisual.vue'
 import { MnistInference, loadTestSamples, normalizePixels } from '../inference.js'
 
 const inference = new MnistInference()
-
-const DATASETS = [
-  {
-    key: 'mnist',
-    name: 'MNIST 测试集',
-    description: '真实 MNIST 测试集，用来对照标准识别效果。',
-    loadUrl: async () => import.meta.env.DEV
-      ? (await import('../assets/test_samples_10000.bin?url')).default
-      : (await import('../assets/test_samples_1000.bin?url')).default,
-  },
-  {
-    key: 'playground',
-    name: 'Playground 合成集',
-    description: '模拟网页画板笔画与预处理流程生成的合成手写样本。',
-    loadUrl: async () => import.meta.env.DEV
-      ? (await import('../assets/playground_samples_10000.bin?url')).default
-      : (await import('../assets/playground_samples_1000.bin?url')).default,
-  },
-]
+const DATASET_NAME = 'MNIST 测试集'
+const DATASET_DESCRIPTION = '真实 MNIST 测试集，用来对照标准识别效果。'
 
 const currentIndex = ref(0)
 const currentData = ref(null)
@@ -34,22 +17,16 @@ const loadMessage = ref('加载权重和测试集…')
 const stats = ref(null)
 const sampleGrid = ref([])
 const sampleCount = ref(0)
-const currentDatasetKey = ref('mnist')
-
-// In-memory test data + slim prediction cache
-let samples = null  // { count, pixelsU8: Uint8Array, labels: Uint8Array }
-let predictions = []  // [{ predicted, correct }, ...], same length as samples.count
-
 const scoringProgress = ref(null)  // { done, total } while background scoring runs
-let datasetLoadVersion = 0
-
-const currentDataset = computed(() => {
-  return DATASETS.find(dataset => dataset.key === currentDatasetKey.value) || DATASETS[0]
-})
 
 const datasetSizeHint = computed(() => {
   return import.meta.env.DEV ? '本地开发模式：加载全量样例文件' : '生产模式：加载较小样例文件'
 })
+
+// In-memory test data + slim prediction cache
+let samples = null  // { count, pixelsU8: Uint8Array, labels: Uint8Array }
+let predictions = []  // [{ predicted, correct }, ...], same length as samples.count
+let datasetLoadVersion = 0
 
 onMounted(async () => {
   try {
@@ -79,9 +56,11 @@ async function loadCurrentDataset() {
   const version = ++datasetLoadVersion
   isLoading.value = true
   resetDatasetState()
-  loadMessage.value = `加载数据集：${currentDataset.value.name}…`
+  loadMessage.value = `加载数据集：${DATASET_NAME}…`
 
-  const samplesUrl = await currentDataset.value.loadUrl()
+  const samplesUrl = import.meta.env.DEV
+    ? (await import('../assets/test_samples_10000.bin?url')).default
+    : (await import('../assets/test_samples_1000.bin?url')).default
   const loadedSamples = await loadTestSamples(samplesUrl)
   if (version !== datasetLoadVersion) return
 
@@ -92,16 +71,6 @@ async function loadCurrentDataset() {
   loadSample(0)
   loadSampleGrid()
   scoreAllInBackground(version)
-}
-
-async function changeDataset() {
-  try {
-    await loadCurrentDataset()
-  } catch (e) {
-    console.error('Failed to switch dataset:', e)
-    loadMessage.value = `加载失败：${e.message}`
-    isLoading.value = false
-  }
 }
 
 function scoreSample(i) {
@@ -238,15 +207,7 @@ function selectFromGrid(item) {
           ({{ datasetSizeHint }})
         </span>
       </p>
-      <div class="dataset-switcher">
-        <label class="dataset-label" for="dataset-select">数据集</label>
-        <select id="dataset-select" v-model="currentDatasetKey" class="dataset-select" @change="changeDataset">
-          <option v-for="dataset in DATASETS" :key="dataset.key" :value="dataset.key">
-            {{ dataset.name }}
-          </option>
-        </select>
-        <p class="dataset-description">{{ currentDataset.description }}</p>
-      </div>
+      <p class="dataset-description">{{ DATASET_NAME }}：{{ DATASET_DESCRIPTION }}</p>
     </header>
 
     <div v-if="isLoading" class="init-loading">
@@ -424,37 +385,9 @@ function selectFromGrid(item) {
   background: rgba(108, 99, 255, 0.1);
 }
 
-.dataset-switcher {
+.dataset-description {
   margin: 18px auto 0;
   max-width: 560px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-}
-
-.dataset-label {
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--color-text-light);
-}
-
-.dataset-select {
-  min-width: 300px;
-  padding: 12px 14px;
-  border-radius: 12px;
-  border: 1px solid rgba(108, 99, 255, 0.24);
-  background: var(--color-card);
-  color: var(--color-text);
-  font-size: 15px;
-  font-weight: 700;
-  box-shadow: var(--shadow-sm);
-}
-
-.dataset-description {
-  margin: 0;
   font-size: 14px;
   color: var(--color-text-light);
 }

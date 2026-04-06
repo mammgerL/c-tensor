@@ -2,6 +2,7 @@
 import { ref, computed } from 'vue'
 
 const activeSection = ref('tensor')
+const trainStep = ref(0)
 
 const sections = [
   { id: 'tensor', label: 'Tensor 结构' },
@@ -168,12 +169,12 @@ for (int step = 0; step < TRAIN_STEPS; step++) {
 
 const trainDesc = `训练循环遵循标准的深度学习流程：
 
-1. 前向传播：输入经过矩阵乘法、激活函数得到输出
-2. 计算损失：NLL Loss（负对数似然），等价于 CrossEntropy
-3. 反向传播：从 loss 开始 backward()，自动计算所有参数的梯度
-4. 参数更新：SGD，w = w - lr * grad
-5. 清零梯度：每次迭代后必须清零，否则梯度会累积
-6. 释放中间张量：C 语言没有 GC，需要手工管理内存
+1. 前向传播：输入经过矩阵乘法、激活函数得到输出。
+2. 计算损失：NLL Loss（负对数似然），衡量预测值与真实标签的差距。
+3. 反向传播：从 loss 开始 backward()，利用链式法则自动计算所有参数的梯度。
+4. 参数更新：SGD，w = w - lr * grad，沿着梯度下降方向微调权重。
+5. 清零梯度：每次迭代后必须清零，否则梯度会累积。
+6. 释放中间张量：C 语言没有 GC，需要手工管理内存。
 
 关键参数：
 • batch_size = 128
@@ -256,17 +257,58 @@ const sectionContent = computed(() => {
         </button>
       </nav>
 
-      <main class="content-area">
-        <div class="content-card">
-          <h2 class="content-title">{{ sectionContent.title }}</h2>
-          <div class="code-block">
-            <pre><code>{{ sectionContent.code }}</code></pre>
-          </div>
-          <div class="content-desc">
-            <p v-for="(para, i) in sectionContent.desc.split('\n\n')" :key="i">{{ para }}</p>
-          </div>
-        </div>
-      </main>
+       <main class="content-area">
+         <div class="content-card">
+           <h2 class="content-title">{{ sectionContent.title }}</h2>
+           
+           <div v-if="activeSection === 'train'" class="train-visualizer">
+             <div class="step-controls">
+               <button 
+                 v-for="(step, i) in [
+                   { label: '前向传播', desc: '计算预测值' },
+                   { label: '计算损失', desc: '衡量误差' },
+                   { label: '反向传播', desc: '计算梯度' },
+                   { label: '参数更新', desc: '优化权重' }
+                 ]" 
+                 :key="i"
+                 :class="['step-btn', { active: trainStep === i }]"
+                 @click="trainStep = i"
+               >
+                 <span class="step-num">{{ i + 1 }}</span>
+                 <span class="step-label">{{ step.label }}</span>
+               </button>
+             </div>
+
+             <div class="viz-canvas">
+               <div class="network-diagram">
+                 <div class="node input-node" :class="{ active: trainStep === 0 || trainStep === 2 }">输入</div>
+                 <div class="arrow forward" :class="{ active: trainStep === 0 }">→</div>
+                 <div class="node hidden-node" :class="{ active: trainStep === 0 || trainStep === 2 }">隐藏层</div>
+                 <div class="arrow forward" :class="{ active: trainStep === 0 }">→</div>
+                 <div class="node output-node" :class="{ active: trainStep === 1 }">输出/Loss</div>
+                 <div class="arrow backward" :class="{ active: trainStep === 2 }">←</div>
+                 <div class="node hidden-node" :class="{ active: trainStep === 2 }">隐藏层</div>
+                 <div class="arrow backward" :class="{ active: trainStep === 2 }">←</div>
+                 <div class="node input-node" :class="{ active: trainStep === 2 }">输入</div>
+                 <div class="update-flash" :class="{ active: trainStep === 3 }">权重更新 ⚡</div>
+               </div>
+               <div class="step-info">
+                 <p v-if="trainStep === 0"><b>前向传播 (Forward):</b> 数据流从输入层 → 隐藏层 → 输出层。执行 $\text{ReLU}(XW_1 + b_1)$ 和 $\text{Softmax}(HW_2 + b_2)$。</p>
+                 <p v-if="trainStep === 1"><b>计算损失 (Loss):</b> 将输出与真实标签对比。Loss 越大，表示模型预测越不准确。</p>
+                 <p v-if="trainStep === 2"><b>反向传播 (Backward):</b> 误差信号反向流动，计算每个权重对 Loss 的贡献（梯度 $\partial L / \partial W$）。</p>
+                 <p v-if="trainStep === 3"><b>参数更新 (Update):</b> 根据梯度方向，稍微减小权重值：$W_{new} = W_{old} - \eta \cdot \text{grad}$。</p>
+               </div>
+             </div>
+           </div>
+
+           <div class="code-block">
+             <pre><code>{{ sectionContent.code }}</code></pre>
+           </div>
+           <div class="content-desc">
+             <p v-for="(para, i) in sectionContent.desc.split('\n\n')" :key="i">{{ para }}</p>
+           </div>
+         </div>
+       </main>
     </div>
 
     <div class="project-structure">
@@ -379,7 +421,145 @@ const sectionContent = computed(() => {
 }
 
 .content-desc p {
-  margin-bottom: 12px;
+   margin-bottom: 12px;
+}
+
+.train-visualizer {
+  margin-bottom: 32px;
+  padding: 24px;
+  background: var(--color-bg);
+  border-radius: 16px;
+  border: 1px solid var(--color-border);
+}
+
+.step-controls {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 32px;
+}
+
+.step-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 20px;
+  border: 1px solid var(--color-border);
+  background: var(--color-card);
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+  color: var(--color-text-light);
+}
+
+.step-btn.active {
+  background: var(--color-primary);
+  color: white;
+  border-color: var(--color-primary);
+  box-shadow: 0 4px 12px rgba(var(--color-primary-rgb), 0.3);
+}
+
+.step-num {
+  background: rgba(0,0,0,0.1);
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: bold;
+}
+
+.step-btn.active .step-num {
+  background: rgba(255,255,255,0.2);
+}
+
+.viz-canvas {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+}
+
+.network-diagram {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 40px;
+  position: relative;
+}
+
+.node {
+  padding: 12px 20px;
+  border-radius: 8px;
+  background: var(--color-card);
+  border: 2px solid var(--color-border);
+  font-size: 14px;
+  font-weight: 600;
+  transition: all 0.3s;
+  z-index: 2;
+}
+
+.node.active {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  transform: scale(1.1);
+  box-shadow: 0 0 15px rgba(var(--color-primary-rgb), 0.4);
+}
+
+.arrow {
+  font-size: 24px;
+  font-weight: bold;
+  color: var(--color-border);
+  transition: all 0.3s;
+}
+
+.arrow.active {
+  color: var(--color-primary);
+  transform: scale(1.3);
+}
+
+.update-flash {
+  position: absolute;
+  top: -20px;
+  padding: 4px 12px;
+  background: #facc15;
+  color: #854d0e;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: bold;
+  opacity: 0;
+  transition: all 0.3s;
+}
+
+.update-flash.active {
+  opacity: 1;
+  top: 10px;
+  animation: flash 1s infinite;
+}
+
+@keyframes flash {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.step-info {
+  max-width: 600px;
+  text-align: center;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--color-text-light);
+  min-height: 60px;
+}
+
+@media (max-width: 768px) {
+  .network-diagram {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
 }
 
 .project-structure {
