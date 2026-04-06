@@ -1,8 +1,71 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 
 const router = useRouter()
+
+// ── Network architecture diagram (3b1b-style) ──────────────────────
+// Fake activations simulating recognition of a "7"
+const diagramLayers = [
+  { x: 80,  label: '输入层', sub: '784 个像素', color: '#6C63FF',
+    act: [0, 0, .15, .9, .85, .4, .05, 0] },
+  { x: 300, label: '隐藏层', sub: '256 个特征', color: '#FF6B9D',
+    act: [.7, 0, .4, .9, 0, .2, .6, .1] },
+  { x: 520, label: '输出层', sub: '10 个数字', color: '#00D2FF',
+    act: [.02, .01, .05, .02, .01, .01, .01, .88, .01, .02] },
+]
+
+const diagramNodes = computed(() =>
+  diagramLayers.map(l => ({
+    ...l,
+    nodes: l.act.map((a, i) => ({
+      y: (260 / (l.act.length + 1)) * (i + 1) + 15,
+      a,
+    })),
+  }))
+)
+
+const diagramEdges = computed(() => {
+  const edges = []
+  const layers = diagramNodes.value
+  for (let l = 0; l < layers.length - 1; l++) {
+    const from = layers[l], to = layers[l + 1]
+    for (const fn of from.nodes) {
+      for (const tn of to.nodes) {
+        edges.push({
+          x1: from.x, y1: fn.y, x2: to.x, y2: tn.y,
+          opacity: 0.04 + fn.a * tn.a * 0.25,
+        })
+      }
+    }
+  }
+  return edges
+})
+
+// Weight pattern grid (what a hidden neuron "looks for" — looks like a loop)
+const weightGrid = [
+  [-.1,  0,  .2,  .5,  .3,  0, -.1],
+  [-.1,  .1, .6,  .9,  .7,  .2, -.1],
+  [ 0,   .3, .9,  .15, .1,  .8,  .1],
+  [ 0,   .6, .3, -.1,   0,  .5,  .2],
+  [ .1,  .7, .1,   0,  .2,  .7,  .1],
+  [-.1,  .2, .5,  .7,  .8,  .3,   0],
+  [-.1,  0,  .1,  .3,  .2,   0, -.1],
+]
+
+// Softmax output bars for a "7"
+const softmaxBars = [
+  { digit: 0, prob: 0.002 },
+  { digit: 1, prob: 0.004 },
+  { digit: 2, prob: 0.045 },
+  { digit: 3, prob: 0.008 },
+  { digit: 4, prob: 0.001 },
+  { digit: 5, prob: 0.018 },
+  { digit: 6, prob: 0.001 },
+  { digit: 7, prob: 0.881 },
+  { digit: 8, prob: 0.003 },
+  { digit: 9, prob: 0.040 },
+]
 
 const features = [
   {
@@ -39,8 +102,7 @@ const intuitions = [
     num: '02',
     title: '每个神经元在"寻找"一种模式',
     body: '一个隐藏层神经元接收全部 784 个输入，每个输入配一个权重 w。正权重说"我在乎这里亮"，负权重说"我在乎这里暗"，接近 0 说"我不关心"。把这 784 个权重排回 28×28，就是这个神经元在"找"的那张图。',
-    visual: 'formula',
-    formulaText: 'h = ReLU( Σ wᵢ · xᵢ + b )',
+    visual: 'weights',
   },
   {
     num: '03',
@@ -230,6 +292,43 @@ function navigate(path) {
       </div>
     </section>
 
+    <section class="diagram-section">
+      <h2 class="section-title">网络全景：784 → 256 → 10</h2>
+      <p class="section-subtitle">
+        下面每个圆圈是一个"神经元"，亮度代表激活程度。连线是权重。这就是模型看到一张 "7" 时的状态。
+      </p>
+      <div class="diagram-wrapper">
+        <svg class="network-svg" viewBox="0 0 600 300" preserveAspectRatio="xMidYMid meet">
+          <line v-for="(e, i) in diagramEdges" :key="'e-' + i"
+            :x1="e.x1" :y1="e.y1" :x2="e.x2" :y2="e.y2"
+            stroke="currentColor" :stroke-opacity="e.opacity" stroke-width="1" />
+          <g v-for="(layer, li) in diagramNodes" :key="'l-' + li">
+            <g v-for="(n, ni) in layer.nodes" :key="'n-' + ni">
+              <circle :cx="layer.x" :cy="n.y" r="12"
+                :fill="layer.color" :fill-opacity="0.12 + n.a * 0.88"
+                :stroke="layer.color" :stroke-opacity="0.3" stroke-width="1.5" />
+              <text v-if="li === 2" :x="layer.x + 22" :y="n.y + 4"
+                fill="var(--color-text-light)" font-size="11" font-weight="600">
+                {{ ni }}{{ ni === 7 ? ' ←' : '' }}
+              </text>
+            </g>
+            <text :x="layer.x" y="295" text-anchor="middle" fill="var(--color-text)" font-size="12" font-weight="700">
+              {{ layer.label }}
+            </text>
+            <text :x="layer.x" y="282" text-anchor="middle" fill="var(--color-text-light)" font-size="10">
+              {{ layer.sub }}
+            </text>
+          </g>
+          <text x="190" y="155" text-anchor="middle" fill="var(--color-text-light)" font-size="11" font-family="'SF Mono', monospace">
+            W1 [784, 256]
+          </text>
+          <text x="410" y="155" text-anchor="middle" fill="var(--color-text-light)" font-size="11" font-family="'SF Mono', monospace">
+            W2 [256, 10]
+          </text>
+        </svg>
+      </div>
+    </section>
+
     <section class="intuition-section">
       <h2 class="section-title">神经网络到底在做什么？</h2>
       <p class="section-subtitle">
@@ -240,13 +339,52 @@ function navigate(path) {
           <div class="intuition-num">{{ item.num }}</div>
           <h3 class="intuition-title">{{ item.title }}</h3>
           <p class="intuition-body">{{ item.body }}</p>
-          <div v-if="item.visual === 'neurons'" class="intuition-visual neurons-row">
-            <span v-for="(op, i) in [0.08, 0.22, 0.55, 0.88, 0.7, 0.38, 0.15, 0.05]" :key="i" class="neuron-dot" :style="{ opacity: op }"></span>
+          <!-- Card 01: neuron brightness row -->
+          <div v-if="item.visual === 'neurons'" class="intuition-visual">
+            <div class="neurons-demo">
+              <div class="neurons-label">神经元亮度 = 激活值</div>
+              <div class="neurons-row">
+                <div v-for="(op, i) in [0.0, 0.15, 0.55, 0.92, 0.8, 0.35, 0.1, 0.0]" :key="i" class="neuron-item">
+                  <span class="neuron-dot" :style="{ opacity: 0.1 + op * 0.9, background: '#6C63FF' }"></span>
+                  <span class="neuron-val">{{ op.toFixed(1) }}</span>
+                </div>
+              </div>
+            </div>
           </div>
+          <!-- Card 02: weight pattern grid -->
+          <div v-else-if="item.visual === 'weights'" class="intuition-visual">
+            <div class="weight-pattern-demo">
+              <div class="weight-pattern-grid">
+                <div v-for="(row, r) in weightGrid" :key="r" class="wp-row">
+                  <div v-for="(val, c) in row" :key="c" class="wp-cell"
+                    :style="{ background: val > 0 ? `rgba(108,99,255,${val})` : val < 0 ? `rgba(255,82,82,${-val})` : 'rgba(0,0,0,0.04)' }"
+                  />
+                </div>
+              </div>
+              <div class="weight-pattern-legend">
+                <span><span class="wp-swatch wp-pos"></span> 正权重："这里要亮"</span>
+                <span><span class="wp-swatch wp-neg"></span> 负权重："这里要暗"</span>
+              </div>
+            </div>
+          </div>
+          <!-- Card 03: formula box -->
           <div v-else-if="item.visual === 'formula'" class="intuition-visual formula-box">{{ item.formulaText }}</div>
+          <!-- Card 04: param number -->
           <div v-else-if="item.visual === 'params'" class="intuition-visual params-box">
             <span class="param-number">203,530</span>
             <span class="param-label">个可学习参数</span>
+            <div class="param-breakdown">
+              <div class="param-bar" title="W1: 200,704" style="flex: 200704; background: #6C63FF;"></div>
+              <div class="param-bar" title="b1: 256" style="flex: 256; background: #FF6B9D;"></div>
+              <div class="param-bar" title="W2: 2,560" style="flex: 2560; background: #00D2FF;"></div>
+              <div class="param-bar" title="b2: 10" style="flex: 10; background: #FFB74D;"></div>
+            </div>
+            <div class="param-bar-legend">
+              <span style="color: #6C63FF">W1 200,704</span>
+              <span style="color: #FF6B9D">b1 256</span>
+              <span style="color: #00D2FF">W2 2,560</span>
+              <span style="color: #FFB74D">b2 10</span>
+            </div>
           </div>
         </div>
       </div>
@@ -283,6 +421,38 @@ function navigate(path) {
             </div>
           </div>
           <code class="principle-code">{{ item.code }}</code>
+
+          <!-- ReLU function graph for step 04 -->
+          <div v-if="item.num === '04'" class="principle-figure">
+            <svg class="relu-svg" viewBox="0 0 200 100" preserveAspectRatio="xMidYMid meet">
+              <line x1="10" y1="50" x2="190" y2="50" stroke="var(--color-border, #ddd)" stroke-width="1"/>
+              <line x1="100" y1="8" x2="100" y2="92" stroke="var(--color-border, #ddd)" stroke-width="1"/>
+              <polyline points="10,50 100,50 190,8" stroke="#6C63FF" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+              <circle cx="100" cy="50" r="3.5" fill="#6C63FF"/>
+              <text x="22" y="44" fill="var(--color-text-light)" font-size="9">y = 0</text>
+              <text x="160" y="22" fill="#6C63FF" font-size="10" font-weight="700">y = x</text>
+              <text x="54" y="64" fill="var(--color-text-light)" font-size="9">x &lt; 0</text>
+              <text x="130" y="64" fill="var(--color-text-light)" font-size="9">x &gt; 0</text>
+            </svg>
+            <div class="figure-caption">ReLU(x) = max(0, x) — 左边全部归零，右边原样保留</div>
+          </div>
+
+          <!-- Softmax probability bars for step 06 -->
+          <div v-if="item.num === '07'" class="principle-figure">
+            <div class="prob-bars">
+              <div v-for="bar in softmaxBars" :key="bar.digit" class="prob-bar-row">
+                <span class="prob-digit" :class="{ highlight: bar.digit === 7 }">{{ bar.digit }}</span>
+                <div class="prob-bar-track">
+                  <div class="prob-bar-fill"
+                    :style="{ width: (bar.prob * 100) + '%', background: bar.digit === 7 ? '#6C63FF' : 'var(--color-border, #ddd)' }"
+                  />
+                </div>
+                <span class="prob-pct" :class="{ highlight: bar.digit === 7 }">{{ (bar.prob * 100).toFixed(1) }}%</span>
+              </div>
+            </div>
+            <div class="figure-caption">模型对 "7" 的输出概率分布 — 88.1% 的信心集中在正确类别</div>
+          </div>
+
           <details v-if="item.example" class="principle-example">
             <summary>举个具体例子 ▾</summary>
             <pre>{{ item.example }}</pre>
@@ -408,6 +578,219 @@ function navigate(path) {
   margin: -20px auto 28px;
   max-width: 560px;
   line-height: 1.6;
+}
+
+/* ── Network diagram ── */
+.diagram-section {
+  margin-bottom: 60px;
+}
+
+.diagram-wrapper {
+  background: var(--color-card);
+  border-radius: 16px;
+  padding: 20px 10px 10px;
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+.network-svg {
+  width: 100%;
+  max-width: 700px;
+  height: auto;
+  margin: 0 auto;
+  display: block;
+  color: var(--color-text-light);
+}
+
+/* ── Intuition visuals ── */
+.neurons-demo {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.neurons-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--color-text-light);
+  text-transform: uppercase;
+}
+
+.neurons-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding-top: 6px;
+}
+
+.neuron-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.neuron-dot {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+}
+
+.neuron-val {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 10px;
+  color: var(--color-text-light);
+}
+
+/* Weight pattern grid */
+.weight-pattern-demo {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.weight-pattern-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  background: var(--color-bg);
+  border-radius: 6px;
+}
+
+.wp-row {
+  display: flex;
+  gap: 2px;
+}
+
+.wp-cell {
+  width: 20px;
+  height: 20px;
+  border-radius: 3px;
+}
+
+.weight-pattern-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--color-text-light);
+}
+
+.wp-swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  vertical-align: middle;
+  margin-right: 5px;
+}
+
+.wp-pos { background: rgba(108, 99, 255, 0.7); }
+.wp-neg { background: rgba(255, 82, 82, 0.7); }
+
+/* Param breakdown bar */
+.param-breakdown {
+  display: flex;
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  margin-top: 10px;
+  gap: 2px;
+}
+
+.param-bar {
+  border-radius: 2px;
+  min-width: 2px;
+}
+
+.param-bar-legend {
+  display: flex;
+  gap: 10px;
+  margin-top: 6px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 10px;
+  font-weight: 600;
+  flex-wrap: wrap;
+}
+
+/* ── Principle figures (ReLU, Softmax) ── */
+.principle-figure {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--color-border, rgba(0,0,0,0.08));
+}
+
+.relu-svg {
+  width: 100%;
+  max-width: 260px;
+  height: auto;
+  display: block;
+  margin: 0 auto;
+}
+
+.figure-caption {
+  text-align: center;
+  font-size: 11.5px;
+  color: var(--color-text-light);
+  margin-top: 8px;
+  line-height: 1.5;
+}
+
+/* Probability bars */
+.prob-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.prob-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.prob-digit {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 12px;
+  font-weight: 600;
+  width: 14px;
+  text-align: right;
+  color: var(--color-text-light);
+}
+
+.prob-digit.highlight {
+  color: #6C63FF;
+  font-weight: 800;
+}
+
+.prob-bar-track {
+  flex: 1;
+  height: 10px;
+  background: var(--color-bg);
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.prob-bar-fill {
+  height: 100%;
+  border-radius: 5px;
+  transition: width 0.3s ease;
+}
+
+.prob-pct {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 11px;
+  color: var(--color-text-light);
+  width: 42px;
+  text-align: right;
+}
+
+.prob-pct.highlight {
+  color: #6C63FF;
+  font-weight: 700;
 }
 
 .intuition-section {
@@ -912,6 +1295,10 @@ function navigate(path) {
   .principle-body {
     grid-template-columns: 1fr;
     gap: 12px;
+  }
+
+  .weight-pattern-demo {
+    justify-content: center;
   }
 
   .title-text {
