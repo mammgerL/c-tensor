@@ -9,6 +9,35 @@ static void get_time(struct timeval* t) {
     gettimeofday(t, NULL);
 }
 
+static int count_csv_rows(const char* filename) {
+    FILE* file = fopen(filename, "r");
+    if (!file) { perror("Unable to open file"); exit(1); }
+
+    static char file_buf[1 << 20];
+    setvbuf(file, file_buf, _IOFBF, sizeof(file_buf));
+
+    int ch = 0;
+    int rows = 0;
+    int saw_any = 0;
+    int last_was_newline = 1;
+
+    while ((ch = fgetc(file)) != EOF) {
+        saw_any = 1;
+        if (ch == '\n') {
+            rows++;
+            last_was_newline = 1;
+        }
+        else {
+            last_was_newline = 0;
+        }
+    }
+
+    if (saw_any && !last_was_newline) rows++;
+
+    fclose(file);
+    return rows;
+}
+
 /*
  CSV 解析优化：
   - fgets 读一行
@@ -137,14 +166,25 @@ static void get_next_batch(BatchSampler* s,
     s->pos += B;
 }
 
-int main() {
+int main(int argc, char** argv) {
+    const char* train_path = "mnist_train.csv";
+    const char* model_path = "mnist_mlp.bin";
+
+    if (argc >= 2) train_path = argv[1];
+    if (argc >= 3) model_path = argv[2];
+
     // ---------------- load data ----------------
-    int N = 60000;
+    int N = count_csv_rows(train_path);
+    if (N <= 0) {
+        fprintf(stderr, "No rows found in %s\n", train_path);
+        return 1;
+    }
+
     Tensor* x = create_zero_tensor((int[]) { N, 784 }, 2);
     Tensor* y = create_zero_tensor((int[]) { N, 10 }, 2);
 
-    load_csv(x, y, "mnist_train.csv");
-    printf("loaded csv\n");
+    load_csv(x, y, train_path);
+    printf("loaded csv: %s (%d rows)\n", train_path, N);
 
     // ---------------- model: 784 -> 256 -> 10 with bias ----------------
     int H = 256;
@@ -288,8 +328,8 @@ int main() {
     double elapsed = (end.tv_sec - start.tv_sec) + (end.tv_usec - start.tv_usec) / 1e6;
     printf("Elapsed Time: %.6f seconds\n", elapsed);
 
-    save_model("mnist_mlp.bin", w1, b1, w2, b2);
-    printf("Saved model to mnist_mlp.bin\n");
+    save_model(model_path, w1, b1, w2, b2);
+    printf("Saved model to %s\n", model_path);
 
     // free
     sampler_free(&sampler);

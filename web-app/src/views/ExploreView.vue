@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import DigitDisplay from '../components/DigitDisplay.vue'
 import ProbabilityChart from '../components/ProbabilityChart.vue'
 import ActivationHeatmap from '../components/ActivationHeatmap.vue'
@@ -8,6 +8,25 @@ import { MnistInference, loadTestSamples, normalizePixels } from '../inference.j
 
 const inference = new MnistInference()
 
+const DATASETS = [
+  {
+    key: 'mnist',
+    name: 'MNIST 测试集',
+    description: '真实 MNIST 测试集，用来对照标准识别效果。',
+    loadUrl: async () => import.meta.env.DEV
+      ? (await import('../assets/test_samples_10000.bin?url')).default
+      : (await import('../assets/test_samples_1000.bin?url')).default,
+  },
+  {
+    key: 'playground',
+    name: 'Playground 合成集',
+    description: '模拟网页画板笔画与预处理流程生成的合成手写样本。',
+    loadUrl: async () => import.meta.env.DEV
+      ? (await import('../assets/playground_samples_10000.bin?url')).default
+      : (await import('../assets/playground_samples_1000.bin?url')).default,
+  },
+]
+
 const currentIndex = ref(0)
 const currentData = ref(null)
 const isLoading = ref(true)
@@ -15,38 +34,75 @@ const loadMessage = ref('加载权重和测试集…')
 const stats = ref(null)
 const sampleGrid = ref([])
 const sampleCount = ref(0)
+const currentDatasetKey = ref('mnist')
 
 // In-memory test data + slim prediction cache
 let samples = null  // { count, pixelsU8: Uint8Array, labels: Uint8Array }
-const predictions = []  // [{ predicted, correct }, ...], same length as samples.count
+let predictions = []  // [{ predicted, correct }, ...], same length as samples.count
 
 const scoringProgress = ref(null)  // { done, total } while background scoring runs
+let datasetLoadVersion = 0
+
+const currentDataset = computed(() => {
+  return DATASETS.find(dataset => dataset.key === currentDatasetKey.value) || DATASETS[0]
+})
+
+const datasetSizeHint = computed(() => {
+  return import.meta.env.DEV ? '本地开发模式：加载全量样例文件' : '生产模式：加载较小样例文件'
+})
 
 onMounted(async () => {
   try {
     loadMessage.value = '加载权重…'
     await inference.loadWeights('./weights.bin')
 
-    loadMessage.value = '加载测试样例…'
-    const samplesUrl = import.meta.env.DEV
-      ? (await import('../assets/test_samples_10000.bin?url')).default
-      : (await import('../assets/test_samples_1000.bin?url')).default
-    samples = await loadTestSamples(samplesUrl)
-    sampleCount.value = samples.count
-
-    // Show UI immediately; sample 0 + the 50-sample grid score on demand.
-    // Full-set scoring (for accuracy stats + wrong-example buttons) runs in
-    // the background so we don't block first paint.
-    isLoading.value = false
-    loadSample(0)
-    loadSampleGrid()
-    scoreAllInBackground()
+    await loadCurrentDataset()
   } catch (e) {
     console.error('Failed to initialize explore view:', e)
     loadMessage.value = `加载失败：${e.message}`
     isLoading.value = false
   }
 })
+
+function resetDatasetState() {
+  samples = null
+  predictions = []
+  currentIndex.value = 0
+  currentData.value = null
+  stats.value = null
+  sampleGrid.value = []
+  sampleCount.value = 0
+  scoringProgress.value = null
+}
+
+async function loadCurrentDataset() {
+  const version = ++datasetLoadVersion
+  isLoading.value = true
+  resetDatasetState()
+  loadMessage.value = `加载数据集：${currentDataset.value.name}…`
+
+  const samplesUrl = await currentDataset.value.loadUrl()
+  const loadedSamples = await loadTestSamples(samplesUrl)
+  if (version !== datasetLoadVersion) return
+
+  samples = loadedSamples
+  sampleCount.value = samples.count
+  isLoading.value = false
+
+  loadSample(0)
+  loadSampleGrid()
+  scoreAllInBackground(version)
+}
+
+async function changeDataset() {
+  try {
+    await loadCurrentDataset()
+  } catch (e) {
+    console.error('Failed to switch dataset:', e)
+    loadMessage.value = `加载失败：${e.message}`
+    isLoading.value = false
+  }
+}
 
 function scoreSample(i) {
   // Memoized slim forward pass; returns cached entry if already computed.
@@ -58,12 +114,13 @@ function scoreSample(i) {
   return entry
 }
 
-async function scoreAllInBackground() {
+async function scoreAllInBackground(version) {
   const N = sampleCount.value
   scoringProgress.value = { done: 0, total: N }
   let correct = 0
   const CHUNK = 250
   for (let start = 0; start < N; start += CHUNK) {
+    if (version !== datasetLoadVersion) return
     const end = Math.min(start + CHUNK, N)
     for (let i = start; i < end; i++) {
       if (scoreSample(i).correct) correct++
@@ -71,6 +128,7 @@ async function scoreAllInBackground() {
     scoringProgress.value = { done: end, total: N }
     await new Promise(r => setTimeout(r, 0))  // yield to paint loop
   }
+  if (version !== datasetLoadVersion) return
   // Recompute correct count from cache (scoreSample may have counted some
   // during grid/navigation, but we haven't been summing those — easier to
   // re-sum once at the end).
@@ -177,9 +235,18 @@ function selectFromGrid(item) {
         <strong>{{ sampleCount.toLocaleString() }}</strong>
         个手写数字，看看 AI 是怎么认出来的！
         <span class="page-desc-env">
-          ({{ sampleCount >= 10000 ? '本地开发模式：全量 10,000 个样例' : '生产模式：1,000 个样例' }})
+          ({{ datasetSizeHint }})
         </span>
       </p>
+      <div class="dataset-switcher">
+        <label class="dataset-label" for="dataset-select">数据集</label>
+        <select id="dataset-select" v-model="currentDatasetKey" class="dataset-select" @change="changeDataset">
+          <option v-for="dataset in DATASETS" :key="dataset.key" :value="dataset.key">
+            {{ dataset.name }}
+          </option>
+        </select>
+        <p class="dataset-description">{{ currentDataset.description }}</p>
+      </div>
     </header>
 
     <div v-if="isLoading" class="init-loading">
@@ -355,6 +422,41 @@ function selectFromGrid(item) {
   padding: 2px 10px;
   border-radius: 999px;
   background: rgba(108, 99, 255, 0.1);
+}
+
+.dataset-switcher {
+  margin: 18px auto 0;
+  max-width: 560px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.dataset-label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-light);
+}
+
+.dataset-select {
+  min-width: 300px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(108, 99, 255, 0.24);
+  background: var(--color-card);
+  color: var(--color-text);
+  font-size: 15px;
+  font-weight: 700;
+  box-shadow: var(--shadow-sm);
+}
+
+.dataset-description {
+  margin: 0;
+  font-size: 14px;
+  color: var(--color-text-light);
 }
 
 .init-loading {
@@ -624,6 +726,11 @@ function selectFromGrid(item) {
 }
 
 @media (max-width: 768px) {
+  .dataset-select {
+    min-width: 100%;
+    width: 100%;
+  }
+
   .stats-banner {
     grid-template-columns: repeat(2, 1fr);
   }

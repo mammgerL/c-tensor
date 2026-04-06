@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Generate binary test-sample files for the web Explore view from mnist_test.csv.
+Generate binary sample files for the web Explore view from a CSV dataset.
 
-Output:
-  web-app/src/assets/test_samples_1000.bin   (first 1000 samples, ~785 KB)
-  web-app/src/assets/test_samples_10000.bin  (all 10000 samples, ~7.8 MB)
+Default output:
+  web-app/src/assets/test_samples_1000.bin
+  web-app/src/assets/test_samples_10000.bin
 
 Binary format (little-endian):
   u32  magic        = 0x54534E4D  ('MNST')
@@ -19,9 +19,11 @@ import csv
 import struct
 import os
 import sys
+import argparse
 
 CSV_PATH = "mnist_test.csv"
 OUT_DIR = "web-app/src/assets"
+PREFIX = "test_samples"
 MAGIC = 0x54534E4D  # 'M','N','S','T' little-endian
 DIM = 784
 NUM_CLASSES = 10
@@ -36,13 +38,26 @@ def write_bin(samples, path):
     print(f"Wrote {path}  ({len(samples)} samples, {os.path.getsize(path):,} bytes)")
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Convert a MNIST-format CSV dataset into Explore-view binary samples."
+    )
+    parser.add_argument("--input", default=CSV_PATH, help="Input CSV path")
+    parser.add_argument("--out-dir", default=OUT_DIR, help="Output directory")
+    parser.add_argument("--prefix", default=PREFIX, help="Output filename prefix")
+    parser.add_argument("--preview-count", type=int, default=1000, help="How many samples to store in the small preview bin")
+    return parser.parse_args()
+
+
 def main():
-    if not os.path.exists(CSV_PATH):
-        print(f"Error: {CSV_PATH} not found. Run create_mnist_csv.py first.")
+    args = parse_args()
+
+    if not os.path.exists(args.input):
+        print(f"Error: {args.input} not found.")
         sys.exit(1)
 
     samples = []
-    with open(CSV_PATH, "r") as f:
+    with open(args.input, "r") as f:
         reader = csv.reader(f)
         for row in reader:
             vals = [float(x) for x in row]
@@ -53,10 +68,11 @@ def main():
             pixels = [max(0, min(255, int(round((v + 1.0) * 127.5)))) for v in pixel_floats]
             samples.append((pixels, label))
 
-    print(f"Parsed {len(samples)} samples from {CSV_PATH}")
-    os.makedirs(OUT_DIR, exist_ok=True)
-    write_bin(samples[:1000], os.path.join(OUT_DIR, "test_samples_1000.bin"))
-    write_bin(samples, os.path.join(OUT_DIR, "test_samples_10000.bin"))
+    print(f"Parsed {len(samples)} samples from {args.input}")
+    os.makedirs(args.out_dir, exist_ok=True)
+    small_count = min(args.preview_count, len(samples))
+    write_bin(samples[:small_count], os.path.join(args.out_dir, f"{args.prefix}_{small_count}.bin"))
+    write_bin(samples, os.path.join(args.out_dir, f"{args.prefix}_{len(samples)}.bin"))
 
 
 if __name__ == "__main__":

@@ -1,10 +1,10 @@
 # 编译产物
 train
 eval
-web
 
 #数据
 data/
+generated/
 *.csv
 
 # 模型文件
@@ -12,6 +12,7 @@ data/
 !web-app/src/assets/weights.bin
 !web-app/src/assets/test_samples_1000.bin
 !web-app/src/assets/test_samples_10000.bin
+!web-app/public/playground_weights.bin
 !html/weights.bin
 
 # macOS
@@ -27,7 +28,3 @@ data/
 # 调试文件
 *.dSYM/
 *.out
-
-# WASM dev files (not used)
-wasm_inference.c
-build_wasm.sh

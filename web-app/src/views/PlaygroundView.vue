@@ -6,17 +6,32 @@ import ComputationTrace from '../components/ComputationTrace.vue'
 import { MnistInference } from '../inference.js'
 
 const inference = new MnistInference()
+const MODEL_OPTIONS = [
+  {
+    key: 'mnist',
+    name: 'MNIST 标准模型',
+    url: './weights.bin',
+    description: '原始 MNIST 训练模型，泛化到标准手写数字最好。',
+  },
+  {
+    key: 'playground',
+    name: 'Playground 合成模型',
+    url: './playground_weights.bin',
+    description: '只用 playground 风格合成数据训练，更贴近当前画板预处理。',
+  },
+]
+
+const currentModelKey = ref('mnist')
 const modelReady = ref(false)
 const modelError = ref(null)
+let modelLoadVersion = 0
+
+const currentModel = computed(() => {
+  return MODEL_OPTIONS.find(model => model.key === currentModelKey.value) || MODEL_OPTIONS[0]
+})
 
 onMounted(async () => {
-  try {
-    await inference.loadWeights('./weights.bin')
-    modelReady.value = true
-  } catch (e) {
-    modelError.value = e.message
-    console.error('Failed to load model weights:', e)
-  }
+  await loadSelectedModel(false)
   setupCanvas()
 })
 
@@ -406,10 +421,48 @@ watch([() => currentStep.value, () => result.value], () => {
 
 const apiError = ref(null)
 
+async function loadSelectedModel(rerun = true) {
+  const version = ++modelLoadVersion
+  modelReady.value = false
+  modelError.value = null
+  apiError.value = null
+
+  try {
+    await inference.loadWeights(currentModel.value.url)
+    if (version !== modelLoadVersion) return
+    modelReady.value = true
+
+    if (rerun && hasDrawn.value) {
+      runPrediction(getPixelData())
+    }
+  } catch (e) {
+    if (version !== modelLoadVersion) return
+    modelError.value = e.message
+    result.value = null
+    currentStep.value = -1
+    console.error('Failed to load model weights:', e)
+  }
+}
+
+async function changeModel() {
+  await loadSelectedModel(true)
+}
+
+function runPrediction(pixels) {
+  result.value = inference.predict(pixels)
+  console.log('Inference result:', {
+    model: currentModel.value.key,
+    predicted: result.value.predicted,
+    confidence: result.value.confidence,
+  })
+  currentStep.value = computeSteps.length - 1
+  drawPixelGrid()
+}
+
 async function analyze() {
   if (!hasDrawn.value) return
   if (!modelReady.value) {
-    apiError.value = '模型权重未加载，请检查 weights.bin 是否存在'
+    apiError.value = `模型权重未加载，请检查 ${currentModel.value.url} 是否存在`
     return
   }
   isAnalyzing.value = true
@@ -419,10 +472,7 @@ async function analyze() {
   const pixels = getPixelData()
 
   try {
-    result.value = inference.predict(pixels)
-    console.log('Inference result:', { predicted: result.value.predicted, confidence: result.value.confidence })
-    currentStep.value = computeSteps.length - 1
-    drawPixelGrid()
+    runPrediction(pixels)
   } catch (e) {
     console.error('Inference error:', e)
     apiError.value = e.message
@@ -473,6 +523,15 @@ const progressPercent = computed(() => {
     <header class="page-header">
       <h1>📐 矩阵计算演示</h1>
       <p class="page-desc">手写一个数字，逐步查看 784→256→10 的完整计算过程</p>
+      <div class="model-switcher">
+        <label class="model-label" for="model-select">推理模型</label>
+        <select id="model-select" v-model="currentModelKey" class="model-select" @change="changeModel">
+          <option v-for="model in MODEL_OPTIONS" :key="model.key" :value="model.key">
+            {{ model.name }}
+          </option>
+        </select>
+        <p class="model-description">{{ currentModel.description }}</p>
+      </div>
     </header>
 
     <div class="main-layout">
@@ -526,7 +585,7 @@ const progressPercent = computed(() => {
           <span class="error-icon">⚠️</span>
           <h3>模型加载失败</h3>
           <p class="error-message">{{ modelError }}</p>
-          <p class="error-hint">请确保 <code>weights.bin</code> 存在于 <code>web-app/src/assets/</code> 目录下</p>
+          <p class="error-hint">请确保 <code>{{ currentModel.url }}</code> 存在于 <code>web-app/public/</code> 目录下</p>
         </div>
 
         <div v-if="!modelReady && !modelError" class="result-placeholder">
@@ -727,6 +786,7 @@ const progressPercent = computed(() => {
             v-if="result && currentStep >= 0"
             :step="currentStep"
             :result="result"
+            :weights="inference"
           />
 
           <!-- 神经网络连接图 -->
@@ -775,6 +835,41 @@ int predicted = argmax(out->data->values); <span class="comment">// 取最大值
 .page-header {
   text-align: center;
   margin-bottom: 32px;
+}
+
+.model-switcher {
+  margin: 18px auto 0;
+  max-width: 560px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.model-label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-light);
+}
+
+.model-select {
+  min-width: 320px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(108, 99, 255, 0.24);
+  background: var(--color-card);
+  color: var(--color-text);
+  font-size: 15px;
+  font-weight: 700;
+  box-shadow: var(--shadow-sm);
+}
+
+.model-description {
+  margin: 0;
+  font-size: 14px;
+  color: var(--color-text-light);
 }
 
 .page-header h1 {
@@ -1586,6 +1681,11 @@ int predicted = argmax(out->data->values); <span class="comment">// 取最大值
 }
 
 @media (max-width: 900px) {
+  .model-select {
+    min-width: 100%;
+    width: 100%;
+  }
+
   .main-layout {
     grid-template-columns: 1fr;
   }

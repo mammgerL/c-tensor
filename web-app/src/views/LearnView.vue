@@ -273,11 +273,8 @@ const sectionContent = computed(() => {
       <h2>项目文件结构</h2>
       <div class="file-tree">
         <div class="file-item"><span class="file-icon">📄</span> <span class="file-name">tensor.h</span> <span class="file-desc">核心张量库，header-only，包含 Tensor 结构、矩阵运算、自动微分</span></div>
-        <div class="file-item"><span class="file-icon">📄</span> <span class="file-name">tensor_web.h</span> <span class="file-desc">Web 服务辅助函数，前向传播追踪、JSON 序列化</span></div>
         <div class="file-item"><span class="file-icon">📄</span> <span class="file-name">train.c</span> <span class="file-desc">训练程序：加载 CSV → 训练 20000 步 → 保存 mnist_mlp.bin</span></div>
         <div class="file-item"><span class="file-icon">📄</span> <span class="file-name">eval.c</span> <span class="file-desc">评估程序：加载模型 → 在 10000 个测试样本上计算准确率</span></div>
-        <div class="file-item"><span class="file-icon">📄</span> <span class="file-name">web_server.c</span> <span class="file-desc">HTTP 服务器：纯 C 实现，端口 3000，提供 REST API</span></div>
-        <div class="file-item"><span class="file-icon">📄</span> <span class="file-name">api_handlers.c</span> <span class="file-desc">API 处理器：/api/predict、/api/eval、/api/architecture</span></div>
         <div class="file-item"><span class="file-icon">📄</span> <span class="file-name">Makefile</span> <span class="file-desc">构建配置：macOS 用 Accelerate，Linux 用 OpenMP</span></div>
       </div>
     </div>

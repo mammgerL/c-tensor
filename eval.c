@@ -3,6 +3,34 @@
 #include <stdlib.h>
 #include <string.h>
 
+static int count_csv_rows(const char* filename) {
+    FILE* file = fopen(filename, "r");
+    if (!file) { perror("Unable to open file"); exit(1); }
+
+    static char file_buf[1 << 20];
+    setvbuf(file, file_buf, _IOFBF, sizeof(file_buf));
+
+    int ch = 0;
+    int rows = 0;
+    int saw_any = 0;
+    int last_was_newline = 1;
+
+    while ((ch = fgetc(file)) != EOF) {
+        saw_any = 1;
+        if (ch == '\n') {
+            rows++;
+            last_was_newline = 1;
+        }
+        else {
+            last_was_newline = 0;
+        }
+    }
+
+    if (saw_any && !last_was_newline) rows++;
+
+    fclose(file);
+    return rows;
+}
 
 static inline int argmax10(const float* row) {
     int best = 0; float bestv = row[0];
@@ -64,10 +92,16 @@ static void load_csv_n_fast(Tensor* x, Tensor* y, const char* filename, int N) {
     fclose(file);
 }
 
-int main() {
+int main(int argc, char** argv) {
+    const char* model_path = "mnist_mlp.bin";
+    const char* test_path = "mnist_test.csv";
+
+    if (argc >= 2) model_path = argv[1];
+    if (argc >= 3) test_path = argv[2];
+
     // load model
     Tensor* w1 = NULL, * b1 = NULL, * w2 = NULL, * b2 = NULL;
-    load_model("mnist_mlp.bin", &w1, &b1, &w2, &b2);
+    load_model(model_path, &w1, &b1, &w2, &b2);
 
     // sanity checks
     if (!w1 || !b1 || !w2 || !b2) {
@@ -92,10 +126,14 @@ int main() {
     }
 
     // load test set
-    const int N = 10000;
+    const int N = count_csv_rows(test_path);
+    if (N <= 0) {
+        fprintf(stderr, "No rows found in %s\n", test_path);
+        return 1;
+    }
     Tensor* x = create_zero_tensor((int[]) { N, 784 }, 2);
     Tensor* y = create_zero_tensor((int[]) { N, 10 }, 2);
-    load_csv_n_fast(x, y, "mnist_test.csv", N);
+    load_csv_n_fast(x, y, test_path, N);
 
     // eval batch
     const int B = 256;
@@ -153,8 +191,8 @@ int main() {
         free_tensor(h2b);
     }
 
-    printf("Test Accuracy: %.2f%% (%d/%d)\n",
-        100.0f * (float)correct / (float)total, correct, total);
+    printf("Test Accuracy: %.2f%% (%d/%d) | model=%s | data=%s\n",
+        100.0f * (float)correct / (float)total, correct, total, model_path, test_path);
 
     // cleanup
     free_tensor(w1); free_tensor(b1); free_tensor(w2); free_tensor(b2);

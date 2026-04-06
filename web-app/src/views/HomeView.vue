@@ -605,6 +605,54 @@ function navigate(path) {
           <li>想亲眼看看这些数字怎么工作？<a href="#" @click.prevent="navigate('/playground')">去 Playground</a> 画一个数字，每一个神经元被激活了多少都是实时计算出来的。</li>
         </ul>
       </div>
+
+      <div class="file-format">
+        <h3 class="notes-title">mnist_mlp.bin 文件是怎么组织的？</h3>
+        <p class="format-desc">
+          训练完成后，模型以二进制格式保存到 <code>mnist_mlp.bin</code> 文件中。整个文件由一个固定大小的文件头 + 四块连续的 float 数据组成，没有任何框架依赖，用 C 的 <code>fread</code> 就能直接读取。
+        </p>
+        <div class="format-structure">
+          <div class="format-block header">
+            <span class="block-label">文件头</span>
+            <span class="block-size">28 bytes</span>
+            <div class="block-fields">
+              <span class="field"><code>magic</code> <span class="field-val">0x314C504D ("MLP1")</span></span>
+              <span class="field"><code>version</code> <span class="field-val">1</span></span>
+              <span class="field"><code>w1_rows, w1_cols</code> <span class="field-val">784, 256</span></span>
+              <span class="field"><code>b1_len</code> <span class="field-val">256</span></span>
+              <span class="field"><code>w2_rows, w2_cols</code> <span class="field-val">256, 10</span></span>
+              <span class="field"><code>b2_len</code> <span class="field-val">10</span></span>
+            </div>
+          </div>
+          <div class="format-arrow">↓</div>
+          <div class="format-block data">
+            <span class="block-label">W1 数据</span>
+            <span class="block-size">802,816 bytes</span>
+            <span class="block-detail">200,704 × float32，按行主序排列</span>
+          </div>
+          <div class="format-arrow">↓</div>
+          <div class="format-block data">
+            <span class="block-label">b1 数据</span>
+            <span class="block-size">1,024 bytes</span>
+            <span class="block-detail">256 × float32</span>
+          </div>
+          <div class="format-arrow">↓</div>
+          <div class="format-block data">
+            <span class="block-label">W2 数据</span>
+            <span class="block-size">10,240 bytes</span>
+            <span class="block-detail">2,560 × float32</span>
+          </div>
+          <div class="format-arrow">↓</div>
+          <div class="format-block data">
+            <span class="block-label">b2 数据</span>
+            <span class="block-size">40 bytes</span>
+            <span class="block-detail">10 × float32</span>
+          </div>
+        </div>
+        <p class="format-summary">
+          总大小约 <strong>814,148 bytes（~795 KB）</strong>。文件头记录了每个张量的形状，加载时先读头再按尺寸分配内存、读数据。这种设计让模型文件可以独立于训练代码被加载和验证。
+        </p>
+      </div>
     </section>
 
     <section class="principles-section">
@@ -1778,6 +1826,132 @@ function navigate(path) {
 
 .weights-notes a:hover {
   text-decoration: underline;
+}
+
+.file-format {
+  background: rgba(108, 99, 255, 0.04);
+  border-left: 3px solid #6C63FF;
+  border-radius: 10px;
+  padding: 18px 22px;
+  margin-top: 14px;
+}
+
+.format-desc {
+  font-size: 13.5px;
+  line-height: 1.7;
+  color: var(--color-text-light);
+  margin: 0 0 16px 0;
+}
+
+.format-desc code {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 12px;
+  background: var(--color-bg);
+  padding: 1px 6px;
+  border-radius: 4px;
+  color: var(--color-text);
+}
+
+.format-structure {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.format-block {
+  width: 100%;
+  max-width: 520px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.format-block.header {
+  background: var(--color-card);
+  border: 1px solid rgba(108, 99, 255, 0.2);
+  flex-wrap: wrap;
+}
+
+.format-block.data {
+  background: var(--color-card);
+  border: 1px solid rgba(0, 210, 255, 0.15);
+}
+
+.block-label {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--color-primary);
+  white-space: nowrap;
+}
+
+.format-block.data .block-label {
+  color: #00D2FF;
+}
+
+.block-size {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 12px;
+  color: var(--color-text-light);
+  background: var(--color-bg);
+  padding: 2px 8px;
+  border-radius: 5px;
+  white-space: nowrap;
+}
+
+.block-detail {
+  font-size: 12px;
+  color: var(--color-text-light);
+}
+
+.block-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  width: 100%;
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px dashed rgba(108, 99, 255, 0.15);
+}
+
+.field {
+  font-size: 12px;
+  color: var(--color-text-light);
+}
+
+.field code {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 11px;
+  color: var(--color-text);
+}
+
+.field-val {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 11px;
+  color: var(--color-primary);
+}
+
+.format-arrow {
+  font-size: 18px;
+  color: var(--color-text-light);
+  opacity: 0.4;
+  line-height: 1;
+}
+
+.format-summary {
+  font-size: 13.5px;
+  line-height: 1.7;
+  color: var(--color-text-light);
+  margin: 0;
+}
+
+.format-summary strong {
+  color: var(--color-text);
 }
 
 .principle-example pre {

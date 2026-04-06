@@ -21,6 +21,12 @@ c-tensor/
 ├── eval.c                # 模型评估程序
 ├── create_mnist_csv.py   # 数据准备脚本
 ├── Makefile              # 构建配置
+├── web-app/              # Vue 3 前端（纯 JS 推理）
+│   ├── src/
+│   │   ├── inference.js  # 纯 JS 推理引擎
+│   │   └── views/        # 页面组件
+│   └── public/
+│       └── weights.bin   # 训练好的模型权重
 └── README.md             # 本文档
 ```
 
@@ -65,6 +71,32 @@ python3 create_mnist_csv.py
 - `mnist_train.csv`：60,000 个训练样本
 - `mnist_test.csv`：10,000 个测试样本
 
+如果你想试更大、更新一些的数字数据集，可以单独生成 `EMNIST Digits`：
+
+```bash
+make emnist-data
+```
+
+这会额外生成：
+- `emnist_digits_train.csv`
+- `emnist_digits_test.csv`
+
+它会先下载 `EMNIST Digits` 所需的 4 个原始 gzip 文件，再导出 CSV。
+和下载整个 `EMNIST gzip.zip` 大包相比，这条链路只拉 digits 子集，更省时间。
+导出时默认会应用一次方向修正，使样本朝向与 MNIST 更一致。
+
+如果你想单独生成更接近网页 `playground` 鼠标画板风格的合成样本，而不改动原始 MNIST 数据集：
+
+```bash
+make playground-data
+```
+
+这会额外生成：
+- `generated/playground_handwritten/playground_handwritten_train.csv`
+- `generated/playground_handwritten/preview/`
+
+这批数据会先在 `280×280` 黑底画布上画白色笔画，再使用和前端类似的裁剪、缩放、质心居中与模糊流程导出成 `28×28` 输入。
+
 ### 4. 训练模型
 
 ```bash
@@ -80,12 +112,32 @@ make train-run
 
 训练完成后生成 `mnist_mlp.bin` 模型文件。
 
+如果你想直接训练一版 `EMNIST Digits` 模型：
+
+```bash
+make emnist-train-run
+```
+
+这会读取 `emnist_digits_train.csv`，并输出 `emnist_digits_mlp.bin`。
+
 ### 5. 评估模型
 
 ```bash
 make eval-run
 # 或
 ./eval
+```
+
+如果要评估 `EMNIST Digits` 模型：
+
+```bash
+make emnist-eval-run
+```
+
+如果要把 `EMNIST Digits` 测试集导出成前端 Explore 页面可读的二进制样本：
+
+```bash
+make emnist-web-data
 ```
 
 ### 6. 一键运行
@@ -180,10 +232,15 @@ void kaiming_uniform_(Arr *arr, int fan_in);
 | `make train` | 仅编译训练程序 |
 | `make eval` | 仅编译评估程序 |
 | `make data` | 生成 MNIST 数据集 |
+| `make emnist-raw` | 下载 EMNIST Digits 原始 gzip 文件（仅 digits 子集） |
+| `make emnist-data` | 生成 EMNIST Digits 数据集 |
+| `make playground-data` | 生成独立的 playground 风格合成手写数据 |
 | `make run` | 完整流程：数据 → 训练 → 评估 |
 | `make train-run` | 编译并运行训练 |
 | `make eval-run` | 编译并运行评估 |
-| `make web` | 启动 Web 可视化服务 |
+| `make emnist-train-run` | 使用 EMNIST Digits 训练 `emnist_digits_mlp.bin` |
+| `make emnist-eval-run` | 在 EMNIST Digits 测试集上评估 `emnist_digits_mlp.bin` |
+| `make emnist-web-data` | 导出 Explore 页面可加载的 EMNIST 样本 bin 文件 |
 | `make debug` | Debug 编译（带调试符号） |
 | `make clean` | 清理编译产物 |
 | `make cleanall` | 清理所有生成文件 |
@@ -240,34 +297,33 @@ make openmp
 #define HIDDEN_SIZE 256     // 隐藏层大小
 ```
 
-## Web 可视化服务
+## Web 可视化
 
 提供交互式 Web 界面，用于：
 - 浏览测试样本（支持 `all/correct/incorrect` 筛选）
-- 动态播放一次前向推理的 5 个学习步骤
+- 动态播放一次前向推理的学习步骤
 - 展示输出概率、Top-2 margin、隐藏层稀疏度
 - 可视化隐藏层激活与关键贡献神经元（Top contributors）
 - 联动网络图高亮（输入层 → 隐藏层 → 输出层）
 
-### 启动服务
+### 启动开发服务器
 
 ```bash
-# 确保已训练模型和生成数据
-make data
-make train-run
-
-# 启动 Web 服务
-make web
+cd web-app && npm install
+cd web-app && npm run dev
 ```
 
-访问 http://localhost:3000
+访问 http://localhost:5173
 
-### Web API（用于前端）
+### 构建生产版本
 
-- `GET /api/architecture`：返回网络结构（输入/隐藏/输出维度）
-- `GET /api/eval`：返回整体评估与每类准确率（服务端缓存）
-- `GET /api/indices?filter=all|correct|incorrect[&limit=N]`：返回筛选后的样本索引
-- `GET /api/predict?index=N`：返回单样本推理详情（像素、隐藏层、logsoftmax、probabilities、logits、learning 解释字段）
+```bash
+cd web-app && npm run build
+```
+
+构建产物输出到 `web-app/dist/`，可直接部署到任何静态文件服务器。
+
+> 推理完全在浏览器端运行（纯 JavaScript），无需后端服务。
 
 ## 模型文件格式
 

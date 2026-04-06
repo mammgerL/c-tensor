@@ -4,6 +4,7 @@ import { ref, computed, watch } from 'vue'
 const props = defineProps({
   step: { type: Number, default: -1 },
   result: { type: Object, default: null },
+  weights: { type: Object, default: null },
 })
 
 const activeNeuron = ref(0)
@@ -110,14 +111,28 @@ const selectedNeuron = computed(() => {
   return topContributorNeurons.value[activeNeuron.value] ?? null
 })
 
-async function fetchWeights(neuronIdx) {
+function getWeightsFromJS(neuronIdx) {
+  if (!props.weights?.w1) return null
+  const H = HIDDEN_SIZE
+  const w1 = props.weights.w1 // Float32Array [784, 256]
+  // W1 is stored as [784, 256] row-major: w1[i * H + j] = weight from pixel i to neuron j
+  const weights = new Array(784)
+  for (let i = 0; i < 784; i++) {
+    weights[i] = w1[i * H + neuronIdx]
+  }
+  return weights
+}
+
+function fetchWeights(neuronIdx) {
   isLoadingWeights.value = true
   neuronWeights.value = null
   try {
-    const res = await fetch(`/api/weights?layer=1&neuron=${neuronIdx}`)
-    if (res.ok) neuronWeights.value = await res.json()
+    const w = getWeightsFromJS(neuronIdx)
+    if (w) {
+      neuronWeights.value = { weights: w }
+    }
   } catch (e) {
-    console.error('Failed to fetch weights:', e)
+    console.error('Failed to get weights:', e)
   } finally {
     isLoadingWeights.value = false
   }

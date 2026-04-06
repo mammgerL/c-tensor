@@ -24,7 +24,7 @@ else
 endif
 
 # 目标文件
-TARGETS := train eval web
+TARGETS := train eval
 
 # 默认目标
 all: $(TARGETS)
@@ -36,10 +36,6 @@ train: train.c tensor.h
 # 编译评估程序
 eval: eval.c tensor.h
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
-
-# 编译 Web 服务器
-web: web_server.c api_handlers.c tensor.h
-	$(CC) $(CFLAGS) -o $@ web_server.c api_handlers.c $(LDFLAGS)
 
 # OpenMP 版本编译 (macOS 上使用 libomp)
 openmp: clean
@@ -57,31 +53,70 @@ data: mnist_train.csv mnist_test.csv
 mnist_train.csv mnist_test.csv: create_mnist_csv.py
 	python3 create_mnist_csv.py
 
+# 准备 EMNIST Digits 数据集（独立于 MNIST）
+EMNIST_RAW_DIR := data/EMNIST/digits/raw
+EMNIST_BASE_URL := https://huggingface.co/datasets/Royc30ne/emnist-digits/resolve/main
+EMNIST_RAW_FILES := \
+	$(EMNIST_RAW_DIR)/emnist-digits-train-images-idx3-ubyte.gz \
+	$(EMNIST_RAW_DIR)/emnist-digits-train-labels-idx1-ubyte.gz \
+	$(EMNIST_RAW_DIR)/emnist-digits-test-images-idx3-ubyte.gz \
+	$(EMNIST_RAW_DIR)/emnist-digits-test-labels-idx1-ubyte.gz
+
+emnist-raw: $(EMNIST_RAW_FILES)
+
+$(EMNIST_RAW_DIR)/emnist-digits-train-images-idx3-ubyte.gz:
+	mkdir -p $(EMNIST_RAW_DIR)
+	curl --http1.1 -L --retry 8 --retry-delay 2 --retry-all-errors --connect-timeout 15 -o $@ '$(EMNIST_BASE_URL)/emnist-digits-train-images-idx3-ubyte.gz?download=true'
+
+$(EMNIST_RAW_DIR)/emnist-digits-train-labels-idx1-ubyte.gz:
+	mkdir -p $(EMNIST_RAW_DIR)
+	curl --http1.1 -L --retry 8 --retry-delay 2 --retry-all-errors --connect-timeout 15 -o $@ '$(EMNIST_BASE_URL)/emnist-digits-train-labels-idx1-ubyte.gz?download=true'
+
+$(EMNIST_RAW_DIR)/emnist-digits-test-images-idx3-ubyte.gz:
+	mkdir -p $(EMNIST_RAW_DIR)
+	curl --http1.1 -L --retry 8 --retry-delay 2 --retry-all-errors --connect-timeout 15 -o $@ '$(EMNIST_BASE_URL)/emnist-digits-test-images-idx3-ubyte.gz?download=true'
+
+$(EMNIST_RAW_DIR)/emnist-digits-test-labels-idx1-ubyte.gz:
+	mkdir -p $(EMNIST_RAW_DIR)
+	curl --http1.1 -L --retry 8 --retry-delay 2 --retry-all-errors --connect-timeout 15 -o $@ '$(EMNIST_BASE_URL)/emnist-digits-test-labels-idx1-ubyte.gz?download=true'
+
+emnist-data: emnist_digits_train.csv emnist_digits_test.csv
+
+emnist_digits_train.csv emnist_digits_test.csv: create_emnist_csv.py emnist-raw
+	python3 create_emnist_csv.py --root $(EMNIST_RAW_DIR)
+
+EMNIST_MODEL := emnist_digits_mlp.bin
+EMNIST_WEB_PREFIX := emnist_samples
+
+# 生成独立的 playground 风格合成手写数据
+PLAYGROUND_DATA_DIR := generated/playground_handwritten
+PLAYGROUND_DATA_CSV := $(PLAYGROUND_DATA_DIR)/playground_handwritten_train.csv
+
+playground-data: $(PLAYGROUND_DATA_CSV)
+
+$(PLAYGROUND_DATA_CSV): generate_handwritten.py
+	mkdir -p $(PLAYGROUND_DATA_DIR)
+	python3 generate_handwritten.py --count 10000 --output $(PLAYGROUND_DATA_CSV) --preview --preview-dir $(PLAYGROUND_DATA_DIR)/preview
+
 # 仅训练
 train-run: train data
 	./train
+
+# 使用 EMNIST Digits 训练单独模型
+emnist-train-run: train emnist-data
+	./train emnist_digits_train.csv $(EMNIST_MODEL)
 
 # 仅评估
 eval-run: eval data
 	./eval
 
-# 启动 Web 服务
-web-run: web data
-	./web
+# 在 EMNIST Digits 测试集上评估 EMNIST 专用模型
+emnist-eval-run: eval emnist-data
+	./eval $(EMNIST_MODEL) emnist_digits_test.csv
 
-# 启动新版 Vue 3 前端开发服务
-web-dev:
-	cd web-app && npm run dev
-
-# 构建新版前端
-web-build:
-	cd web-app && npm run build
-	rm -rf html/*
-	cp -r web-app/dist/* html/
-
-# 安装前端依赖
-web-install:
-	cd web-app && npm install
+# 将 EMNIST Digits 测试集导出为 Explore 页面可加载的二进制样本
+emnist-web-data: emnist_digits_test.csv generate_test_samples.py
+	python3 generate_test_samples.py --input emnist_digits_test.csv --prefix $(EMNIST_WEB_PREFIX) --out-dir web-app/src/assets
 
 # 清理编译产物
 clean:
@@ -90,6 +125,7 @@ clean:
 # 清理所有生成文件（包括数据和模型）
 cleanall: clean
 	rm -f mnist_train.csv mnist_test.csv mnist_mlp.bin
+	rm -f emnist_digits_train.csv emnist_digits_test.csv $(EMNIST_MODEL)
 
 
 # Debug 编译（带调试符号，无优化）
@@ -101,27 +137,32 @@ help:
 	@echo "C-Tensor Makefile 使用说明"
 	@echo ""
 	@echo "目标:"
-	@echo "  all        - 编译 train、eval 和 web (默认，macOS 用 Accelerate)"
+	@echo "  all        - 编译 train 和 eval (默认，macOS 用 Accelerate)"
 	@echo "  openmp     - 使用 OpenMP 编译 (macOS 需 brew install libomp)"
 	@echo "  train      - 仅编译训练程序"
 	@echo "  eval       - 仅编译评估程序"
-	@echo "  web        - 仅编译 Web 服务器"
 	@echo "  data       - 生成 MNIST CSV 数据集"
+	@echo "  emnist-raw - 下载 EMNIST Digits 原始 gzip 文件（仅 digits 子集）"
+	@echo "  emnist-data - 生成 EMNIST Digits CSV 数据集"
+	@echo "  playground-data - 生成独立的 playground 风格合成手写数据"
 	@echo "  run        - 完整流程: 数据准备 + 训练 + 评估"
 	@echo "  train-run  - 编译并运行训练"
 	@echo "  eval-run   - 编译并运行评估"
-	@echo "  web-run    - 编译并启动 Web 服务（C 后端）"
-	@echo "  web-dev    - 启动 Vue 3 前端开发服务"
-	@echo "  web-build  - 构建 Vue 3 前端"
-	@echo "  web-install - 安装前端依赖"
+	@echo "  emnist-train-run - 使用 EMNIST Digits 训练 emnist_digits_mlp.bin"
+	@echo "  emnist-eval-run - 在 EMNIST Digits 测试集上评估 emnist_digits_mlp.bin"
+	@echo "  emnist-web-data - 导出 Explore 页面可加载的 EMNIST 样本 bin 文件"
 	@echo "  debug      - Debug 编译 (带调试符号)"
 	@echo "  clean      - 清理编译产物"
 	@echo "  cleanall   - 清理所有生成文件"
 	@echo "  help       - 显示此帮助信息"
+	@echo ""
+	@echo "Web 前端开发:"
+	@echo "  cd web-app && npm run dev    - 启动开发服务器 (http://localhost:5173)"
+	@echo "  cd web-app && npm run build  - 构建生产版本"
 	@echo ""
 	@echo "环境: $(UNAME_S)"
 	@echo "编译器: $(CC)"
 	@echo "编译选项: $(CFLAGS)"
 	@echo "链接选项: $(LDFLAGS)"
 
-.PHONY: all openmp run data train-run eval-run web-run clean cleanall debug help
+.PHONY: all openmp run data emnist-data playground-data train-run eval-run emnist-train-run emnist-eval-run emnist-web-data clean cleanall debug help
