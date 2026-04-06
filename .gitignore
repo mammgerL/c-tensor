@@ -12,7 +12,10 @@ generated/
 !web-app/src/assets/weights.bin
 !web-app/src/assets/test_samples_1000.bin
 !web-app/src/assets/test_samples_10000.bin
-!web-app/public/playground_weights.bin
+!web-app/src/assets/emnist_samples_1000.bin
+!web-app/src/assets/emnist_samples_40000.bin
+!web-app/public/weights.bin
+!web-app/public/emnist_weights.bin
 !html/weights.bin
 
 # macOS
