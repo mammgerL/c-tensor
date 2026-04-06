@@ -1,20 +1,50 @@
 <script setup>
-import { ref, reactive, computed, onMounted, watch, nextTick } from 'vue'
+import { ref, reactive, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import ProbabilityChart from '../components/ProbabilityChart.vue'
 import NetworkVisual from '../components/NetworkVisual.vue'
 import ComputationTrace from '../components/ComputationTrace.vue'
 import { MnistInference } from '../inference.js'
 
 const inference = new MnistInference()
-const MODEL_KEY = 'mnist'
-const MODEL_URL = './weights.bin'
+const COLLECTION_STORAGE_KEY = 'ctensor-playground-collection-v1'
+const DIGIT_OPTIONS = Array.from({ length: 10 }, (_, i) => i)
+const MODEL = {
+  key: 'mnist',
+  name: 'MNIST Minis',
+  url: './weights.bin',
+  description: '线上线下统一使用轻量 MNIST 模型，减少 GitHub Pages 首次加载等待。',
+}
 const modelReady = ref(false)
 const modelError = ref(null)
 let modelLoadVersion = 0
 
+const currentModel = computed(() => MODEL)
+
+const handleCollectorKeydown = (e) => {
+  if (!result.value) return
+  if (e.metaKey || e.ctrlKey || e.altKey) return
+
+  if (/^[0-9]$/.test(e.key)) {
+    selectCollectorLabel(e.key)
+    e.preventDefault()
+    return
+  }
+
+  if (e.key === 'Enter' && collectorLabel.value !== '') {
+    saveCollectedLabel(collectorLabel.value)
+    e.preventDefault()
+  }
+}
+
 onMounted(async () => {
   await loadSelectedModel(false)
   setupCanvas()
+  await refreshCollectedCount()
+  window.addEventListener('keydown', handleCollectorKeydown)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handleCollectorKeydown)
 })
 
 const canvasRef = ref(null)
@@ -25,6 +55,12 @@ const result = ref(null)
 const hasDrawn = ref(false)
 const currentStep = ref(-1)
 const hoveredPixel = ref(null)
+const collectorLabel = ref('')
+const collectorSaved = ref(false)
+const collectorStatus = ref('')
+const collectedCount = ref(0)
+const collectorMode = ref('local')
+const collectorPathHint = ref('')
 
 const strokeHistory = reactive([])
 let currentStroke = []
@@ -132,6 +168,7 @@ function clearCanvas() {
   result.value = null
   hasDrawn.value = false
   currentStep.value = -1
+  resetCollectorState()
 }
 
 function undoStroke() {
@@ -142,6 +179,7 @@ function undoStroke() {
     result.value = null
     hasDrawn.value = false
     currentStep.value = -1
+    resetCollectorState()
   }
 }
 
@@ -403,6 +441,233 @@ watch([() => currentStep.value, () => result.value], () => {
 
 const apiError = ref(null)
 
+function resetCollectorState() {
+  collectorLabel.value = ''
+  collectorSaved.value = false
+  collectorStatus.value = ''
+}
+
+function normalizeCollectorLabel(value) {
+  const label = Number(value)
+  if (!Number.isInteger(label) || label < 0 || label > 9) return null
+  return label
+}
+
+function selectCollectorLabel(label) {
+  collectorLabel.value = String(label)
+  if (!collectorSaved.value) {
+    collectorStatus.value = ''
+  }
+}
+
+function confirmSelectedCollectorLabel() {
+  saveCollectedLabel(collectorLabel.value)
+}
+
+function loadCollectedSamples() {
+  try {
+    const raw = localStorage.getItem(COLLECTION_STORAGE_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed : []
+  } catch (e) {
+    console.error('Failed to load collected samples:', e)
+    return []
+  }
+}
+
+function saveCollectedSamples(samples) {
+  localStorage.setItem(COLLECTION_STORAGE_KEY, JSON.stringify(samples))
+}
+
+async function refreshCollectedCount() {
+  try {
+    const stats = await fetchCollectorStats()
+    collectorMode.value = 'filesystem'
+    collectedCount.value = stats.count || 0
+    collectorPathHint.value = stats.paths?.csv || ''
+  } catch {
+    collectorMode.value = 'local'
+    collectedCount.value = loadCollectedSamples().length
+    collectorPathHint.value = ''
+  }
+}
+
+function makeOneHot(label) {
+  const onehot = new Array(10).fill(0)
+  onehot[label] = 1
+  return onehot
+}
+
+function buildCollectedSample(label) {
+  return {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+    createdAt: new Date().toISOString(),
+    label,
+    predicted: result.value.predicted,
+    confidence: result.value.confidence,
+    model: currentModel.value.key,
+    pixels: [...result.value.pixels],
+    onehot: makeOneHot(label),
+    strokeHistory: strokeHistory.map(stroke => stroke.map(point => ({ x: point.x, y: point.y }))),
+  }
+}
+
+function downloadTextFile(filename, content, mimeType) {
+  const blob = new Blob([content], { type: mimeType })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
+}
+
+async function fetchCollectorStats() {
+  const response = await fetch('/api/collect-digit/stats')
+  if (!response.ok) {
+    throw new Error(`stats request failed: ${response.status}`)
+  }
+  return response.json()
+}
+
+async function saveSampleToFilesystem(sample) {
+  const response = await fetch('/api/collect-digit', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(sample),
+  })
+  if (!response.ok) {
+    throw new Error(`save request failed: ${response.status}`)
+  }
+  return response.json()
+}
+
+async function clearFilesystemSamples() {
+  const response = await fetch('/api/collect-digit', {
+    method: 'DELETE',
+  })
+  if (!response.ok) {
+    throw new Error(`clear request failed: ${response.status}`)
+  }
+  return response.json()
+}
+
+function triggerApiDownload(format) {
+  const link = document.createElement('a')
+  link.href = `/api/collect-digit/export?format=${format}`
+  link.download = format === 'csv' ? 'playground_collection.csv' : 'playground_collection.jsonl'
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+}
+
+async function saveCollectedLabel(labelValue) {
+  if (!result.value) {
+    collectorStatus.value = '请先让 AI 完成一次预测。'
+    return
+  }
+  if (collectorSaved.value) {
+    collectorStatus.value = '这次样本已经保存过了，重新书写后再保存下一条。'
+    return
+  }
+
+  const label = normalizeCollectorLabel(labelValue)
+  if (label === null) {
+    collectorStatus.value = '正确数字只能是 0-9。'
+    return
+  }
+
+  const sample = buildCollectedSample(label)
+
+  try {
+    const payload = await saveSampleToFilesystem(sample)
+    collectorMode.value = 'filesystem'
+    collectedCount.value = payload.count || 0
+    collectorPathHint.value = payload.paths?.csv || ''
+    collectorSaved.value = true
+    collectorLabel.value = String(label)
+    collectorStatus.value = collectorPathHint.value
+      ? `已写入项目目录 ${collectorPathHint.value}，当前共 ${collectedCount.value} 条样本。`
+      : `已写入项目目录，当前共 ${collectedCount.value} 条样本。`
+    return
+  } catch (e) {
+    console.warn('Failed to save to filesystem, falling back to localStorage:', e)
+  }
+
+  collectorMode.value = 'local'
+  const samples = loadCollectedSamples()
+  samples.push(sample)
+  saveCollectedSamples(samples)
+  collectedCount.value = samples.length
+  collectorSaved.value = true
+  collectorLabel.value = String(label)
+  collectorStatus.value = `已保存到浏览器本地，当前共 ${samples.length} 条样本。`
+}
+
+async function exportCollectedJson() {
+  if (collectorMode.value === 'filesystem') {
+    triggerApiDownload('jsonl')
+    collectorStatus.value = '已从项目目录导出 JSONL 样本。'
+    return
+  }
+
+  const samples = loadCollectedSamples()
+  if (samples.length === 0) {
+    collectorStatus.value = '当前还没有可导出的采集样本。'
+    return
+  }
+  downloadTextFile(
+    `playground_collection_${samples.length}.json`,
+    JSON.stringify(samples, null, 2),
+    'application/json'
+  )
+  collectorStatus.value = `已导出 ${samples.length} 条 JSON 样本。`
+}
+
+async function exportCollectedCsv() {
+  if (collectorMode.value === 'filesystem') {
+    triggerApiDownload('csv')
+    collectorStatus.value = '已从项目目录导出 CSV 样本。'
+    return
+  }
+
+  const samples = loadCollectedSamples()
+  if (samples.length === 0) {
+    collectorStatus.value = '当前还没有可导出的采集样本。'
+    return
+  }
+
+  const rows = samples.map(sample => [...sample.pixels, ...makeOneHot(sample.label)].join(','))
+  downloadTextFile(
+    `playground_collection_${samples.length}.csv`,
+    rows.join('\n'),
+    'text/csv;charset=utf-8'
+  )
+  collectorStatus.value = `已导出 ${samples.length} 条 CSV 样本。`
+}
+
+async function clearCollectedSamples() {
+  if (collectorMode.value === 'filesystem') {
+    try {
+      await clearFilesystemSamples()
+      collectedCount.value = 0
+      collectorStatus.value = '已清空项目目录中的采集数据。'
+      return
+    } catch (e) {
+      console.warn('Failed to clear filesystem samples, falling back to localStorage:', e)
+    }
+  }
+
+  localStorage.removeItem(COLLECTION_STORAGE_KEY)
+  collectorMode.value = 'local'
+  collectedCount.value = 0
+  collectorPathHint.value = ''
+  collectorStatus.value = '已清空浏览器本地采集数据。'
+}
+
 async function loadSelectedModel(rerun = true) {
   const version = ++modelLoadVersion
   modelReady.value = false
@@ -410,7 +675,7 @@ async function loadSelectedModel(rerun = true) {
   apiError.value = null
 
   try {
-    await inference.loadWeights(MODEL_URL)
+    await inference.loadWeights(currentModel.value.url)
     if (version !== modelLoadVersion) return
     modelReady.value = true
 
@@ -428,8 +693,11 @@ async function loadSelectedModel(rerun = true) {
 
 function runPrediction(pixels) {
   result.value = inference.predict(pixels)
+  collectorLabel.value = String(result.value.predicted)
+  collectorSaved.value = false
+  collectorStatus.value = ''
   console.log('Inference result:', {
-    model: MODEL_KEY,
+    model: currentModel.value.key,
     predicted: result.value.predicted,
     confidence: result.value.confidence,
   })
@@ -501,7 +769,11 @@ const progressPercent = computed(() => {
     <header class="page-header">
       <h1>📐 矩阵计算演示</h1>
       <p class="page-desc">手写一个数字，逐步查看 784→256→10 的完整计算过程</p>
-      <p class="model-description">当前使用 MNIST 标准模型进行推理演示。</p>
+      <div class="model-switcher static">
+        <span class="model-label">固定模型</span>
+        <div class="model-pill">{{ currentModel.name }}</div>
+        <p class="model-description">{{ currentModel.description }}</p>
+      </div>
     </header>
 
     <div class="main-layout">
@@ -555,7 +827,7 @@ const progressPercent = computed(() => {
           <span class="error-icon">⚠️</span>
           <h3>模型加载失败</h3>
           <p class="error-message">{{ modelError }}</p>
-          <p class="error-hint">请确保 <code>{{ MODEL_URL }}</code> 存在于 <code>web-app/public/</code> 目录下</p>
+          <p class="error-hint">请确保 <code>{{ currentModel.url }}</code> 存在于 <code>web-app/public/</code> 目录下</p>
         </div>
 
         <div v-if="!modelReady && !modelError" class="result-placeholder">
@@ -575,6 +847,75 @@ const progressPercent = computed(() => {
         </div>
 
         <template v-if="result">
+          <div class="collector-panel">
+            <div class="collector-header">
+              <div>
+                <h3>真实标签采集</h3>
+                <p>AI 出结果后，你可以直接确认预测，或者点选正确数字再保存。</p>
+                <p class="collector-storage-hint">
+                  <template v-if="collectorMode === 'filesystem'">
+                    本地开发模式：样本会自动写入项目目录
+                    <code v-if="collectorPathHint">{{ collectorPathHint }}</code>
+                  </template>
+                  <template v-else>
+                    当前未连接到本地文件保存接口，会回退到浏览器本地保存。
+                  </template>
+                </p>
+              </div>
+              <div class="collector-count">已采集 {{ collectedCount }}</div>
+            </div>
+
+            <div class="collector-main">
+              <div class="collector-prediction">
+                <span class="collector-pred-label">AI 预测</span>
+                <span class="collector-pred-value">{{ result.predicted }}</span>
+                <span class="collector-pred-confidence">{{ (result.confidence * 100).toFixed(1) }}%</span>
+              </div>
+
+              <div class="collector-actions">
+                <button class="collector-btn primary" @click="saveCollectedLabel(result.predicted)">
+                  预测正确，保存
+                </button>
+                <div class="collector-corrector">
+                  <span class="collector-corrector-label">如果不对，点选正确数字</span>
+                  <div class="collector-digit-grid">
+                    <button
+                      v-for="digit in DIGIT_OPTIONS"
+                      :key="digit"
+                      :class="['collector-digit-btn', { active: collectorLabel === String(digit) }]"
+                      @click="selectCollectorLabel(digit)"
+                    >
+                      {{ digit }}
+                    </button>
+                  </div>
+                  <div class="collector-confirm-row">
+                    <button class="collector-btn" @click="confirmSelectedCollectorLabel">
+                      保存所选标签
+                    </button>
+                    <span class="collector-hint">键盘可直接按数字选择，按 Enter 保存</span>
+                  </div>
+                  <button
+                    v-if="collectorLabel === String(result.predicted)"
+                    class="collector-btn subtle"
+                    @click="saveCollectedLabel(result.predicted)"
+                  >
+                    当前选中就是 AI 预测值，直接保存
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div class="collector-export">
+              <button class="collector-btn secondary" @click="exportCollectedJson">导出 JSON</button>
+              <button class="collector-btn secondary" @click="exportCollectedCsv">导出 CSV</button>
+              <button class="collector-btn danger" @click="clearCollectedSamples">清空本地数据</button>
+            </div>
+
+            <p v-if="collectorStatus" class="collector-status" :class="{ saved: collectorSaved }">
+              {{ collectorStatus }}
+            </p>
+          </div>
+
           <div class="step-progress">
             <div class="progress-bar">
               <div class="progress-fill" :style="{ width: progressPercent + '%' }"></div>
@@ -807,8 +1148,45 @@ int predicted = argmax(out->data->values); <span class="comment">// 取最大值
   margin-bottom: 32px;
 }
 
-.model-description {
+.model-switcher {
   margin: 18px auto 0;
+  max-width: 560px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.model-switcher.static {
+  padding: 14px 18px;
+  border-radius: 16px;
+  background: rgba(108, 99, 255, 0.06);
+  border: 1px solid rgba(108, 99, 255, 0.14);
+}
+
+.model-label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-light);
+}
+
+.model-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: var(--color-card);
+  color: var(--color-primary);
+  font-size: 14px;
+  font-weight: 800;
+  box-shadow: var(--shadow-sm);
+}
+
+.model-description {
+  margin: 0;
   max-width: 560px;
   font-size: 14px;
   color: var(--color-text-light);
@@ -962,6 +1340,207 @@ int predicted = argmax(out->data->values); <span class="comment">// 取最大值
   display: flex;
   flex-direction: column;
   gap: 20px;
+}
+
+.collector-panel {
+  background: var(--color-card);
+  border-radius: 14px;
+  padding: 18px 20px;
+  box-shadow: var(--shadow-sm);
+  border: 1px solid rgba(108, 99, 255, 0.12);
+}
+
+.collector-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.collector-header h3 {
+  margin: 0 0 6px;
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.collector-header p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--color-text-light);
+}
+
+.collector-storage-hint {
+  margin-top: 8px !important;
+}
+
+.collector-storage-hint code {
+  margin-left: 6px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: var(--color-bg);
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 12px;
+}
+
+.collector-count {
+  flex-shrink: 0;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(108, 99, 255, 0.1);
+  color: var(--color-primary);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.collector-main {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.collector-prediction {
+  min-width: 132px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: var(--color-bg);
+  text-align: center;
+}
+
+.collector-pred-label {
+  font-size: 12px;
+  color: var(--color-text-light);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.collector-pred-value {
+  font-size: 42px;
+  font-weight: 900;
+  line-height: 1;
+  color: var(--color-primary);
+}
+
+.collector-pred-confidence {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-text-light);
+}
+
+.collector-actions {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.collector-corrector {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.collector-corrector-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-text-light);
+}
+
+.collector-digit-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  width: 100%;
+  max-width: 320px;
+}
+
+.collector-digit-btn {
+  min-width: 48px;
+  padding: 10px 0;
+  border-radius: 10px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-size: 16px;
+  font-weight: 800;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.collector-digit-btn.active {
+  background: linear-gradient(135deg, var(--color-primary), var(--color-accent));
+  color: white;
+  box-shadow: var(--shadow-sm);
+}
+
+.collector-digit-btn:hover {
+  transform: translateY(-1px);
+}
+
+.collector-confirm-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.collector-hint {
+  font-size: 12px;
+  color: var(--color-text-light);
+}
+
+.collector-btn {
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.collector-btn.primary {
+  background: linear-gradient(135deg, var(--color-primary), var(--color-accent));
+  color: white;
+}
+
+.collector-btn.secondary {
+  background: rgba(108, 99, 255, 0.08);
+  color: var(--color-primary);
+}
+
+.collector-btn.danger {
+  background: rgba(255, 82, 82, 0.08);
+  color: var(--color-danger, #FF5252);
+}
+
+.collector-btn.subtle {
+  padding: 0;
+  background: transparent;
+  color: var(--color-primary);
+  font-size: 13px;
+}
+
+.collector-export {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.collector-status {
+  margin: 14px 0 0;
+  font-size: 13px;
+  color: var(--color-text-light);
+}
+
+.collector-status.saved {
+  color: var(--color-success, #2ed573);
+  font-weight: 700;
 }
 
 .result-placeholder {
@@ -1623,13 +2202,13 @@ int predicted = argmax(out->data->values); <span class="comment">// 取最大值
 }
 
 @media (max-width: 900px) {
-  .model-select {
-    min-width: 100%;
-    width: 100%;
-  }
-
   .main-layout {
     grid-template-columns: 1fr;
+  }
+
+  .collector-main {
+    flex-direction: column;
+    align-items: stretch;
   }
 }
 </style>

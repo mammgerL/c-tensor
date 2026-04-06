@@ -373,6 +373,28 @@ const accCurvePath = computed(() => {
     .join(' ')
 })
 
+const lossCurvePoint = computed(() => {
+  if (lossHistory.value.length === 0) return null
+  const index = lossHistory.value.length - 1
+  const width = 400
+  const height = 150
+  return {
+    x: (index / 200) * width,
+    y: height - (lossHistory.value[index] / 2.5) * height,
+  }
+})
+
+const accCurvePoint = computed(() => {
+  if (accHistory.value.length === 0) return null
+  const index = accHistory.value.length - 1
+  const width = 400
+  const height = 150
+  return {
+    x: (index / 200) * width,
+    y: height - (accHistory.value[index] / 100) * height,
+  }
+})
+
 onMounted(() => {
   startSim()
 })
@@ -393,6 +415,7 @@ onUnmounted(() => {
 
     <section class="iteration-section">
       <div class="section-label">一次迭代详解</div>
+      <p class="section-intro">把一次真实训练迭代拆成 6 个步骤。左边看数据和张量如何流动，右边直接对照仓库里的 C 代码实现。</p>
 
       <div class="step-bar">
         <button
@@ -416,14 +439,17 @@ onUnmounted(() => {
             <div class="visual-area">
               <div v-if="currentStepData.id === 'batch'" class="viz-batch">
                 <div class="batch-flow">
-                  <div class="dataset-grid">
-                    <div
-                      v-for="i in 24"
-                      :key="i"
-                      class="grid-cell"
-                      :class="{ selected: [3, 5, 8, 9, 12, 15, 19, 22].includes(i) }"
-                    ></div>
-                    <div class="grid-label">训练集 (60000 × 784)</div>
+                  <div class="dataset-grid-wrap">
+                    <div class="dataset-grid">
+                      <div
+                        v-for="i in 24"
+                        :key="i"
+                        class="grid-cell"
+                        :class="{ selected: [3, 5, 8, 9, 12, 15, 19, 22].includes(i) }"
+                      ></div>
+                      <div class="grid-label">训练集 (60000 × 784)</div>
+                    </div>
+                    <div class="viz-caption">紫色 = 当前 batch 选中的样本</div>
                   </div>
                   <div class="flow-arrow">→</div>
                   <div class="batch-result">
@@ -473,6 +499,9 @@ onUnmounted(() => {
                   </svg>
                   <span class="relu-label">ReLU: max(0, x)</span>
                 </div>
+                <div class="mini-note">
+                  负值会被直接截成 0。没有这层非线性，两层 matmul 本质上仍然只是一层线性变换。
+                </div>
               </div>
 
               <div v-else-if="currentStepData.id === 'output'" class="viz-dims">
@@ -504,6 +533,7 @@ onUnmounted(() => {
                   </div>
                 </div>
                 <div class="prob-note">LogSoftmax 输出：一个样本对 10 个数字的对数概率</div>
+                <div class="mini-note center">这里示意里数字 5 的概率最高，所以它最可能成为当前样本的预测类别。</div>
               </div>
 
               <div v-else-if="currentStepData.id === 'loss'" class="viz-loss-flow">
@@ -514,6 +544,7 @@ onUnmounted(() => {
                       <span class="tensor-dim">(128,10)·(128,10)</span>
                     </div>
                     <div class="loss-step-label">逐元素乘</div>
+                    <div class="loss-step-tip">正确类标签是 -1，其余是 0</div>
                   </div>
                   <div class="flow-arrow">→</div>
                   <div class="loss-step">
@@ -522,6 +553,7 @@ onUnmounted(() => {
                       <span class="tensor-dim">(128,10) → (128,1)</span>
                     </div>
                     <div class="loss-step-label">每行求和</div>
+                    <div class="loss-step-tip">每个样本得到 1 个 NLL 值</div>
                   </div>
                   <div class="flow-arrow">→</div>
                   <div class="loss-step">
@@ -530,6 +562,7 @@ onUnmounted(() => {
                       <span class="tensor-dim">(128,1) → (1)</span>
                     </div>
                     <div class="loss-step-label">batch 平均</div>
+                    <div class="loss-step-tip">把 128 个样本压成 1 个标量</div>
                   </div>
                   <div class="flow-arrow">→</div>
                   <div class="loss-scalar">
@@ -564,6 +597,7 @@ onUnmounted(() => {
                 <div class="bwd-code-hint">
                   <code>backward(t) { op_backward(t); for each prev: backward(prev); }</code>
                 </div>
+                <div class="mini-note center">每个节点先处理自己的局部梯度，再把结果递归分发给前驱节点。</div>
               </div>
 
               <div v-else-if="currentStepData.id === 'update'" class="viz-update">
@@ -601,6 +635,7 @@ onUnmounted(() => {
                       </div>
                     </div>
                     <div class="free-note">C 没有 GC，每一步都要手动 free</div>
+                    <div class="free-note secondary">只有 w1、b1、w2、b2 和 batch 张量会保留到下一步</div>
                   </div>
                 </div>
               </div>
@@ -624,7 +659,10 @@ onUnmounted(() => {
         <aside class="code-col">
           <div class="code-block">
             <div class="code-block-header">
-              <span class="code-block-title">train.c</span>
+              <div class="code-block-meta">
+                <span class="code-block-title">train.c</span>
+                <span class="code-block-subtitle">训练循环中的直接调用</span>
+              </div>
               <span class="code-block-lines">:{{ currentStepData.trainCode.lines }}</span>
             </div>
             <pre class="code-content main-code"><code>{{ currentStepData.trainCode.code }}</code></pre>
@@ -632,8 +670,11 @@ onUnmounted(() => {
 
           <div class="code-block secondary">
             <div class="code-block-header">
-              <span class="code-block-title">tensor.h</span>
-              <span class="code-block-hint">{{ currentStepData.tensorCode.title }}</span>
+              <div class="code-block-meta">
+                <span class="code-block-title">tensor.h</span>
+                <span class="code-block-subtitle">{{ currentStepData.tensorCode.title }}</span>
+              </div>
+              <span class="code-block-hint">核心实现</span>
             </div>
             <pre class="code-content tensor-code"><code>{{ currentStepData.tensorCode.code }}</code></pre>
           </div>
@@ -643,6 +684,7 @@ onUnmounted(() => {
 
     <section class="progress-section">
       <div class="section-label">训练全过程</div>
+      <p class="section-intro">上面解释一次 step 内部发生了什么，这里则从更长时间尺度看 loss、accuracy 和权重模式如何一起变化。</p>
 
       <div class="progress-layout">
         <div class="curve-card">
@@ -654,13 +696,21 @@ onUnmounted(() => {
               <span class="stat step">Step: {{ simStep * 100 }} / 20000</span>
             </div>
           </div>
+          <p class="curve-subtitle">模拟 20000 个训练 step 的宏观走势，loss 指数下降，accuracy 逐步收敛到高位。</p>
 
           <svg viewBox="0 0 400 150" class="curve-svg" preserveAspectRatio="none">
             <path d="M0,150 L400,150" class="curve-axis"></path>
             <path d="M0,0 L0,150" class="curve-axis"></path>
             <path :d="lossCurvePath" fill="none" stroke="var(--color-primary)" stroke-width="2.5" opacity="0.85" />
             <path :d="accCurvePath" fill="none" stroke="var(--color-success)" stroke-width="2.5" opacity="0.85" />
+            <circle v-if="lossCurvePoint" :cx="lossCurvePoint.x" :cy="lossCurvePoint.y" r="4.5" fill="var(--color-primary)" />
+            <circle v-if="accCurvePoint" :cx="accCurvePoint.x" :cy="accCurvePoint.y" r="4.5" fill="var(--color-success)" />
           </svg>
+          <div class="curve-footer">
+            <span>Step 0</span>
+            <span>Step 10000</span>
+            <span>Step 20000</span>
+          </div>
 
           <div class="curve-legend">
             <span class="legend-item"><span class="legend-dot loss"></span>Loss 下降</span>
@@ -672,6 +722,12 @@ onUnmounted(() => {
           <div class="heatmap-header">
             <h3>权重演变 (W₁ 局部)</h3>
             <span class="heatmap-state">{{ heatmapStateLabel }}</span>
+          </div>
+          <p class="curve-subtitle">拖动滑块观察从随机初始化到形成结构，再到基本收敛时的局部权重模式。</p>
+          <div class="heatmap-phases">
+            <span :class="['phase-pill', { active: heatmapState === 0 }]">随机</span>
+            <span :class="['phase-pill', { active: heatmapState === 1 }]">学习中</span>
+            <span :class="['phase-pill', { active: heatmapState === 2 }]">收敛</span>
           </div>
 
           <div class="heatmap-grid">
@@ -754,6 +810,14 @@ onUnmounted(() => {
   color: var(--color-primary);
 }
 
+.section-intro {
+  max-width: 760px;
+  margin: -6px 0 22px;
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--color-text-light);
+}
+
 .step-bar {
   display: flex;
   flex-wrap: wrap;
@@ -816,6 +880,7 @@ onUnmounted(() => {
   border-radius: 20px;
   background: var(--color-card);
   box-shadow: var(--shadow-md);
+  border: 1px solid rgba(108, 99, 255, 0.08);
 }
 
 .step-tag {
@@ -849,6 +914,30 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
+  box-shadow: inset 0 0 0 1px rgba(108, 99, 255, 0.06);
+}
+
+.viz-caption {
+  margin-top: 8px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #9ca3af;
+}
+
+.mini-note {
+  max-width: 420px;
+  margin: 18px auto 0;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.62);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--color-text-light);
+  text-align: left;
+}
+
+.mini-note.center {
+  text-align: center;
 }
 
 .details-grid {
@@ -948,10 +1037,22 @@ onUnmounted(() => {
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+.code-block-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
 .code-block-title {
   font-size: 13px;
   font-weight: 800;
   color: #e5e7eb;
+}
+
+.code-block-subtitle {
+  font-size: 10px;
+  font-weight: 700;
+  color: #6b7280;
 }
 
 .code-block-lines {
@@ -996,6 +1097,12 @@ onUnmounted(() => {
   justify-content: center;
   gap: 20px;
   flex-wrap: wrap;
+}
+
+.dataset-grid-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 .dataset-grid {
@@ -1209,6 +1316,13 @@ onUnmounted(() => {
   color: var(--color-text-light);
 }
 
+.loss-step-tip {
+  max-width: 140px;
+  font-size: 10px;
+  line-height: 1.45;
+  color: #9ca3af;
+}
+
 .loss-scalar {
   display: flex;
   flex-direction: column;
@@ -1369,6 +1483,10 @@ onUnmounted(() => {
   color: var(--color-text-light);
 }
 
+.free-note.secondary {
+  margin-top: 4px;
+}
+
 .progress-section {
   margin-top: 48px;
   padding-top: 40px;
@@ -1387,6 +1505,7 @@ onUnmounted(() => {
   border-radius: 20px;
   background: var(--color-card);
   box-shadow: var(--shadow-md);
+  border: 1px solid rgba(108, 99, 255, 0.08);
 }
 
 .curve-header,
@@ -1432,11 +1551,22 @@ onUnmounted(() => {
   color: var(--color-text-light);
 }
 
+.curve-subtitle {
+  margin: -2px 0 14px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--color-text-light);
+}
+
 .curve-svg {
   width: 100%;
   height: 150px;
   border-radius: 10px;
   background: var(--color-bg);
+  background-image:
+    linear-gradient(to right, rgba(99, 110, 114, 0.08) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(99, 110, 114, 0.08) 1px, transparent 1px);
+  background-size: 20% 100%, 100% 25%;
 }
 
 .curve-axis {
@@ -1451,6 +1581,14 @@ onUnmounted(() => {
   margin-top: 10px;
   font-size: 12px;
   font-weight: 700;
+}
+
+.curve-footer {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+  font-size: 10px;
+  color: var(--color-text-light);
 }
 
 .legend-item {
@@ -1478,6 +1616,28 @@ onUnmounted(() => {
   font-size: 12px;
   font-weight: 700;
   color: var(--color-primary);
+}
+
+.heatmap-phases {
+  display: flex;
+  gap: 8px;
+  margin: -2px 0 14px;
+  flex-wrap: wrap;
+}
+
+.phase-pill {
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: var(--color-bg);
+  color: var(--color-text-light);
+  font-size: 11px;
+  font-weight: 800;
+  transition: all 0.2s ease;
+}
+
+.phase-pill.active {
+  background: var(--color-primary);
+  color: white;
 }
 
 .heatmap-grid {
@@ -1580,6 +1740,10 @@ onUnmounted(() => {
     font-size: 28px;
   }
 
+  .section-intro {
+    font-size: 13px;
+  }
+
   .visual-area {
     min-height: 260px;
     padding: 18px;
@@ -1601,6 +1765,11 @@ onUnmounted(() => {
   .curve-legend {
     flex-wrap: wrap;
     gap: 12px;
+  }
+
+  .curve-header,
+  .heatmap-header {
+    align-items: flex-start;
   }
 }
 </style>

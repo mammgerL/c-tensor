@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted } from 'vue'
 import DigitDisplay from '../components/DigitDisplay.vue'
 import ProbabilityChart from '../components/ProbabilityChart.vue'
 import ActivationHeatmap from '../components/ActivationHeatmap.vue'
@@ -7,8 +7,13 @@ import NetworkVisual from '../components/NetworkVisual.vue'
 import { MnistInference, loadTestSamples, normalizePixels } from '../inference.js'
 
 const inference = new MnistInference()
-const DATASET_NAME = 'MNIST 测试集'
-const DATASET_DESCRIPTION = '真实 MNIST 测试集，用来对照标准识别效果。'
+const DATASET = {
+  key: 'mnist-mini',
+  name: 'MNIST 测试集',
+  description: '线上线下统一加载 1000 条 MNIST 测试样本，配套使用轻量 MNIST 模型，避免 GitHub Pages 首屏加载过重。',
+  weightsUrl: './weights.bin',
+  loadUrl: async () => (await import('../assets/test_samples_1000.bin?url')).default,
+}
 
 const currentIndex = ref(0)
 const currentData = ref(null)
@@ -19,10 +24,6 @@ const sampleGrid = ref([])
 const sampleCount = ref(0)
 const scoringProgress = ref(null)  // { done, total } while background scoring runs
 
-const datasetSizeHint = computed(() => {
-  return import.meta.env.DEV ? '本地开发模式：加载全量样例文件' : '生产模式：加载较小样例文件'
-})
-
 // In-memory test data + slim prediction cache
 let samples = null  // { count, pixelsU8: Uint8Array, labels: Uint8Array }
 let predictions = []  // [{ predicted, correct }, ...], same length as samples.count
@@ -30,9 +31,6 @@ let datasetLoadVersion = 0
 
 onMounted(async () => {
   try {
-    loadMessage.value = '加载权重…'
-    await inference.loadWeights('./weights.bin')
-
     await loadCurrentDataset()
   } catch (e) {
     console.error('Failed to initialize explore view:', e)
@@ -56,11 +54,12 @@ async function loadCurrentDataset() {
   const version = ++datasetLoadVersion
   isLoading.value = true
   resetDatasetState()
-  loadMessage.value = `加载数据集：${DATASET_NAME}…`
+  loadMessage.value = `加载 ${DATASET.name}（1000 条样本）与对应模型…`
 
-  const samplesUrl = import.meta.env.DEV
-    ? (await import('../assets/test_samples_10000.bin?url')).default
-    : (await import('../assets/test_samples_1000.bin?url')).default
+  await inference.loadWeights(DATASET.weightsUrl)
+  if (version !== datasetLoadVersion) return
+
+  const samplesUrl = await DATASET.loadUrl()
   const loadedSamples = await loadTestSamples(samplesUrl)
   if (version !== datasetLoadVersion) return
 
@@ -203,11 +202,11 @@ function selectFromGrid(item) {
         浏览
         <strong>{{ sampleCount.toLocaleString() }}</strong>
         个手写数字，看看 AI 是怎么认出来的！
-        <span class="page-desc-env">
-          ({{ datasetSizeHint }})
-        </span>
       </p>
-      <p class="dataset-description">{{ DATASET_NAME }}：{{ DATASET_DESCRIPTION }}</p>
+      <div class="dataset-summary">
+        <span class="dataset-chip">固定资源集</span>
+        <p class="dataset-description">{{ DATASET.description }}</p>
+      </div>
     </header>
 
     <div v-if="isLoading" class="init-loading">
@@ -374,22 +373,32 @@ function selectFromGrid(item) {
   color: var(--color-text-light);
 }
 
-.page-desc-env {
-  display: inline-block;
-  margin-left: 8px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--color-primary);
-  padding: 2px 10px;
-  border-radius: 999px;
-  background: rgba(108, 99, 255, 0.1);
-}
-
 .dataset-description {
-  margin: 18px auto 0;
+  margin: 0;
   max-width: 560px;
   font-size: 14px;
   color: var(--color-text-light);
+}
+
+.dataset-summary {
+  margin: 18px auto 0;
+  max-width: 560px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.dataset-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(108, 99, 255, 0.1);
+  color: var(--color-primary);
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .init-loading {
@@ -659,11 +668,6 @@ function selectFromGrid(item) {
 }
 
 @media (max-width: 768px) {
-  .dataset-select {
-    min-width: 100%;
-    width: 100%;
-  }
-
   .stats-banner {
     grid-template-columns: repeat(2, 1fr);
   }
