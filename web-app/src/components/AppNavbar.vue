@@ -8,6 +8,7 @@ const router = useRouter()
 const navItems = [
   { path: '/', label: '首页', name: '首页' },
   { path: '/playground', label: '计算演示', name: '计算演示' },
+  { path: '/training', label: '训练过程', name: '训练过程' },
   { path: '/learn', label: 'C 代码原理', name: 'C 代码原理' },
   { path: '/explore', label: '数据探索', name: '数据探索' },
 ]

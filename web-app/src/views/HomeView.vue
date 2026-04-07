@@ -98,6 +98,13 @@ const features = [
     color: '#6C63FF',
   },
   {
+    icon: '🚀',
+    title: '训练过程',
+    desc: '把一次训练迭代拆成采样、两段前向传播、损失、反向传播和参数更新 6 个步骤来看。',
+    path: '/training',
+    color: '#22C55E',
+  },
+  {
     icon: '⚙️',
     title: 'C 代码原理',
     desc: '了解 tensor.h 的核心数据结构、自动微分、Kaiming 初始化等实现细节',
