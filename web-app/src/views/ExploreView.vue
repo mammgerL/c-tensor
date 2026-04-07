@@ -203,10 +203,6 @@ function selectFromGrid(item) {
         <strong>{{ sampleCount.toLocaleString() }}</strong>
         个手写数字，看看 AI 是怎么认出来的！
       </p>
-      <div class="dataset-summary">
-        <span class="dataset-chip">固定资源集</span>
-        <p class="dataset-description">{{ DATASET.description }}</p>
-      </div>
     </header>
 
     <div v-if="isLoading" class="init-loading">
@@ -371,34 +367,6 @@ function selectFromGrid(item) {
 .page-desc {
   font-size: 18px;
   color: var(--color-text-light);
-}
-
-.dataset-description {
-  margin: 0;
-  max-width: 560px;
-  font-size: 14px;
-  color: var(--color-text-light);
-}
-
-.dataset-summary {
-  margin: 18px auto 0;
-  max-width: 560px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-}
-
-.dataset-chip {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 6px 12px;
-  border-radius: 999px;
-  background: rgba(108, 99, 255, 0.1);
-  color: var(--color-primary);
-  font-size: 12px;
-  font-weight: 800;
 }
 
 .init-loading {

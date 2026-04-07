@@ -769,11 +769,6 @@ const progressPercent = computed(() => {
     <header class="page-header">
       <h1>📐 矩阵计算演示</h1>
       <p class="page-desc">手写一个数字，逐步查看 784→256→10 的完整计算过程</p>
-      <div class="model-switcher static">
-        <span class="model-label">固定模型</span>
-        <div class="model-pill">{{ currentModel.name }}</div>
-        <p class="model-description">{{ currentModel.description }}</p>
-      </div>
     </header>
 
     <div class="main-layout">
@@ -1146,50 +1141,6 @@ int predicted = argmax(out->data->values); <span class="comment">// 取最大值
 .page-header {
   text-align: center;
   margin-bottom: 32px;
-}
-
-.model-switcher {
-  margin: 18px auto 0;
-  max-width: 560px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-}
-
-.model-switcher.static {
-  padding: 14px 18px;
-  border-radius: 16px;
-  background: rgba(108, 99, 255, 0.06);
-  border: 1px solid rgba(108, 99, 255, 0.14);
-}
-
-.model-label {
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--color-text-light);
-}
-
-.model-pill {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 8px 14px;
-  border-radius: 999px;
-  background: var(--color-card);
-  color: var(--color-primary);
-  font-size: 14px;
-  font-weight: 800;
-  box-shadow: var(--shadow-sm);
-}
-
-.model-description {
-  margin: 0;
-  max-width: 560px;
-  font-size: 14px;
-  color: var(--color-text-light);
 }
 
 .page-header h1 {
