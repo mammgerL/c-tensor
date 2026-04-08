@@ -7,12 +7,12 @@ const sections = [
   {
     id: 'architecture',
     label: '整体结构',
-    title: '仓库怎么把“训练一个 MLP”拆成几个 C 文件',
-    intro: '这个项目并不是一个“大框架”，而是把最少的几件事拆干净：`tensor.h` 负责张量和自动微分，`train.c` 负责数据加载与训练循环，`eval.c` 负责离线评估。',
+    title: '先认清这几个文件在分工什么',
+    intro: '先别急着看细节。这个项目主要就是三个文件在配合：`tensor.h` 写怎么算，`train.c` 写怎么训练，`eval.c` 写怎么检查结果。',
     trainCode: {
       file: 'train.c',
       lines: '176-208',
-      title: 'model + hyperparams',
+      title: '先把输入、参数和训练配置准备好',
       code: `Tensor* x = create_zero_tensor((int[]) { N, 784 }, 2);
 Tensor* y = create_zero_tensor((int[]) { N, 10 }, 2);
 
@@ -29,7 +29,7 @@ int steps = 20000;`,
     tensorCode: {
       file: 'tensor.h',
       lines: '34-41',
-      title: 'op code 约定',
+      title: '每种操作都有自己的编号',
       code: `#define MATMUL     0
 #define MEAN       1
 #define MUL        2
@@ -39,20 +39,20 @@ int steps = 20000;`,
 #define ADD_BIAS   6`,
     },
     bullets: [
-      { title: '模型非常小', text: '网络结构就是 `784 → 256 → 10` 两层全连接。这样代码足够短，适合把训练全流程写透。' },
-      { title: 'header-only 的代价与收益', text: '`tensor.h` 把算子、梯度、内存分配都内联在一个头文件里，调用简单，但也要求每个实现都足够克制。' },
-      { title: '训练和推理分离', text: '`train.c` 只负责产生 `mnist_mlp.bin`；网页与 `eval.c` 都消费模型文件，而不是依赖训练时状态。' },
+      { title: '模型先搭起来', text: '这里先把 `x`、`y`、`w1`、`b1`、`w2`、`b2` 都建好，后面训练就是一直在改这些值。' },
+      { title: '`tensor.h` 最值得先读', text: '大部分“怎么算”的代码都在这里，所以先读懂这一份，后面会顺很多。' },
+      { title: '训练和使用分开', text: '`train.c` 负责把模型训出来，网页和 `eval.c` 再把它读回来用。' },
     ],
   },
   {
     id: 'tensor',
     label: 'Tensor',
-    title: 'Tensor / Arr：值、梯度、前驱节点组成最小计算图单元',
-    intro: '`Arr` 负责真正存储多维数组，`Tensor` 在它之上再叠一层 autograd 元数据：这个值是哪个 op 产生的、它依赖谁、它的梯度要累加到哪里。',
+    title: 'Tensor 里不只放数值',
+    intro: '`Arr` 负责把数字存进内存里，`Tensor` 再多记几件事：这个值是谁算出来的、梯度放哪、前面接着谁。',
     trainCode: {
       file: 'tensor.h',
       lines: '43-64',
-      title: 'Arr + Tensor struct',
+      title: '先看 Arr 和 Tensor 里面装了什么',
       code: `typedef struct {
     float* values;
     int* shape;
@@ -73,7 +73,7 @@ typedef struct Tensor {
     tensorCode: {
       file: 'tensor.h',
       lines: '98-125,153-160',
-      title: 'shape / strides / zero init',
+      title: '创建时会顺手把形状和梯度也准备好',
       code: `arr->size = 1;
 for (int i = ndim - 1; i >= 0; i--) {
     arr->strides[i] = arr->size;
@@ -89,20 +89,20 @@ t->data = d;
 t->grad = create_arr_zeros(shape, ndim);`,
     },
     bullets: [
-      { title: '为什么同时存 `data` 和 `grad`', text: '前向传播需要读 `data`，反向传播需要往 `grad` 里累加。把二者并排放在一个 Tensor 上，代码简单而且容易定位。' },
-      { title: '为什么有 `prevs`', text: '这就是计算图的边。每个算子把自己的输入记为前驱，`backward()` 只要递归遍历它们，就能回溯整张图。' },
-      { title: '为什么要 `strides`', text: '代码里虽然大多数张量是连续二维数组，但 `shape + strides` 让索引逻辑统一，`sum_axis1`、`add_bias` 等算子都能按通用方式取值。' },
+      { title: '`data` 和 `grad` 要分开', text: '`data` 是当前算出来的值，`grad` 是等会儿反向传回来的改动方向。' },
+      { title: '`prevs` 是回头找路用的', text: '反向传播时，程序就是顺着这里记下来的前驱一个个往回走。' },
+      { title: '`strides` 是找位置用的', text: '虽然看起来像多维数组，但底层还是一块连续内存，`strides` 负责告诉程序该怎么跳。' },
     ],
   },
   {
     id: 'ops',
     label: '核心算子',
-    title: '前向算子：matmul、relu、logsoftmax 负责把像素一路变成对数概率',
-    intro: '网页里看到的“输入 784 像素 → 256 维隐藏层 → 10 类输出”，在 C 里其实只依赖几种非常原子的算子。每个算子都同时承担两件事：算出前向值，登记自己的前驱。',
+    title: '一张图片就是这样一路算下去的',
+    intro: '图片先和 `W1` 做矩阵乘法，再过 ReLU，再和 `W2` 相乘，最后变成 10 个类别分数。每个算子算完都会把输入记下来，给后面的反向传播用。',
     trainCode: {
       file: 'tensor.h',
       lines: '415-451',
-      title: 'matmul forward',
+      title: '矩阵乘法把一层数据送到下一层',
       code: `int P = a->data->shape[0];
 int Q = a->data->shape[1];
 int R = b->data->shape[1];
@@ -124,7 +124,7 @@ t->prevs[1] = b;`,
     tensorCode: {
       file: 'tensor.h',
       lines: '290-337',
-      title: 'relu + logsoftmax',
+      title: 'ReLU 和 LogSoftmax 负责把输出继续整理好',
       code: `for (int i = 0; i < inp->data->size; i++)
     t->data->values[i] =
         (inp->data->values[i] > 0) ? inp->data->values[i] : 0.0f;
@@ -141,20 +141,20 @@ t->data->values[pos] =
     inp->data->values[pos] - maxv - logf(sumexp);`,
     },
     bullets: [
-      { title: 'matmul 是主力算子', text: '隐藏层和输出层都靠矩阵乘法完成。这个项目把优化预算主要放在这里，所以 macOS 直接走 Accelerate 的 `vDSP_mmul`。' },
-      { title: 'ReLU 极简但关键', text: '它只做一件事：把负值清零。没有这一步，两层线性变换仍可折叠成一层线性层。' },
-      { title: 'LogSoftmax 先减最大值', text: '这是典型的数值稳定技巧。先做 `x - max` 再算 `exp`，能避免指数溢出。' },
+      { title: '矩阵乘法最忙', text: '隐藏层和输出层都要做矩阵乘法，所以这里通常最花时间。' },
+      { title: 'ReLU 很直白', text: '它把负数切成 0，正数原样留下，让网络能分出更复杂的数字区别。' },
+      { title: 'LogSoftmax 会先稳一下', text: '它先减掉最大值再算指数，这样数字不会一下子冲得太大。' },
     ],
   },
   {
     id: 'autograd',
-    label: '自动微分',
-    title: 'backward() 不负责“懂数学”，它负责调度每个 op 的局部梯度公式',
-    intro: '很多人第一次看这个项目会以为 `backward()` 很复杂，实际上它很短。真正的关键不在调度器本身，而在每个算子都各自实现了自己的局部 backward 公式。',
+    label: '反向传播',
+    title: '误差是怎么一路传回去的',
+    intro: '`backward()` 本身不复杂。它先看当前这个 Tensor 是哪种操作算出来的，再叫对应的 `*_backward` 来处理，然后继续往前传。',
     trainCode: {
       file: 'tensor.h',
       lines: '211-220',
-      title: 'dispatcher',
+      title: '`backward()` 先决定该叫谁来算',
       code: `static inline void backward(Tensor* t) {
     if (t->op == MUL) mul_backward(t);
     else if (t->op == MEAN) mean_backward(t);
@@ -171,7 +171,7 @@ t->data->values[pos] =
     tensorCode: {
       file: 'tensor.h',
       lines: '454-492',
-      title: 'matmul backward',
+      title: '矩阵乘法会把梯度分回两边',
       code: `// dA += dC * B^T
 cblas_sgemm(CblasRowMajor,
     CblasNoTrans, CblasTrans,
@@ -193,20 +193,20 @@ cblas_sgemm(CblasRowMajor,
     b->grad->values, R);`,
     },
     bullets: [
-      { title: '调度和数学分离', text: '`backward()` 只做“根据 op 分发 + 递归到前驱”，真正的链式法则细节藏在 `relu_backward`、`matmul_backward`、`logsoftmax_backward` 里。' },
-      { title: '梯度是累加的', text: '所有 backward 实现都用 `+=`，这说明同一个节点可以从多条路径收到梯度，设计上已经对 DAG 做了准备。' },
-      { title: '从标量 loss 出发', text: '训练时先手动写入 `loss->grad->values[0] = 1.0f`，相当于把 `dL/dL = 1` 放进图里。' },
+      { title: '每个算子只管自己的账', text: '比如 `relu_backward` 只处理 ReLU，`matmul_backward` 只处理矩阵乘法。' },
+      { title: '梯度不是只来一次', text: '代码里用 `+=`，因为一个节点可能会从不同方向收到梯度。' },
+      { title: '先从 loss 开始推', text: '训练时先把 `loss` 的梯度设成 `1.0f`，然后整条链才会开始往回传。' },
     ],
   },
   {
     id: 'training',
     label: '训练循环',
-    title: '训练循环本质上就是：采样、前向、损失、反向、更新、清理',
-    intro: '`train.c` 把整个深度学习流程写成了一个几乎可以逐行朗读的 for-loop。它没有隐藏框架魔法，所以很适合拿来理解“训练”到底发生了什么。',
+    title: '训练时每一轮都在重复什么',
+    intro: '`train.c` 里的训练循环很直接：拿一个 batch，往前算，算出 loss，再往回传梯度，更新参数，最后把中间结果清掉。',
     trainCode: {
       file: 'train.c',
       lines: '228-286',
-      title: 'one training step',
+      title: '这一段就是一整轮训练',
       code: `for (int it = 0; it < steps; it++) {
     get_next_batch(&sampler, batch_x, batch_y, x, y, B);
 
@@ -229,7 +229,7 @@ cblas_sgemm(CblasRowMajor,
     tensorCode: {
       file: 'train.c',
       lines: '112-166',
-      title: 'batch sampler',
+      title: 'batch 是这样一批一批取出来的',
       code: `static void sampler_shuffle(BatchSampler* s) {
     for (int i = s->N - 1; i > 0; i--) {
         int j = rand() % (i + 1);
@@ -247,20 +247,20 @@ for (int i = 0; i < B; i++) {
 }`,
     },
     bullets: [
-      { title: 'loss 并不是黑盒函数', text: '项目没有调用一个现成的 `nll_loss`，而是用 `mul + sum_axis1 + mean` 把它拆成了 3 个可求导原子操作。' },
-      { title: 'batch sampler 很朴素但高效', text: '先 Fisher-Yates 打乱索引，再连续取 `B=128` 个，用完就重洗。对小项目来说，这比复杂 dataloader 更直接。' },
-      { title: '训练 loop 里顺便做性能统计', text: '每 200 step 打印一次 loss 和 step 时间，所以这个文件既是训练逻辑，也是性能观察入口。' },
+      { title: 'loss 也是拼出来的', text: '这里不是直接调一个现成大函数，而是按 `mul`、`sum_axis1`、`mean` 一步步算。' },
+      { title: '样本会先打乱再取', text: '先把顺序洗一遍，再一段一段拿，这样每轮看到的数据更随机。' },
+      { title: '训练时会顺手报进度', text: '程序会隔一段时间打印 loss 和耗时，方便看训练是不是在往前走。' },
     ],
   },
   {
     id: 'performance',
     label: '性能与内存',
-    title: '为什么这份纯 C 代码还能跑得像样：对齐、BLAS、手动释放',
-    intro: '这个仓库的优化重点不是“炫技 SIMD”，而是把最贵的几处路径处理好：连续内存、64 字节对齐、矩阵乘法走平台库，以及训练循环里主动 free 中间张量。',
+    title: '想跑得稳又快，主要看这几件事',
+    intro: '这里主要做三件事：把内存放整齐，矩阵乘法交给更快的库，每一步结束后把不用的 Tensor 及时释放。',
     trainCode: {
       file: 'tensor.h',
       lines: '88-125,163-167',
-      title: 'aligned alloc + free',
+      title: '分配内存时就考虑后面怎么更快地读写',
       code: `static inline void* aligned_alloc_64(size_t bytes) {
     void* p = NULL;
     if (posix_memalign(&p, 64, bytes) != 0) p = NULL;
@@ -280,7 +280,7 @@ static inline void free_tensor(Tensor* t) {
     tensorCode: {
       file: 'tensor.h / train.c',
       lines: '78-82,198-205,255-286',
-      title: 'kaiming + SGD + cleanup',
+      title: '初始化、更新参数和清理都在这里',
       code: `static inline float kaiming_uniform(int fan_in) {
     float gain = sqrtf(2.0f);
     float std = gain / sqrtf((float)fan_in);
@@ -299,9 +299,9 @@ free_tensor(h1);
 free_tensor(h1b);`,
     },
     bullets: [
-      { title: '64 字节对齐并不花哨', text: '它的目的很直接：给底层 SIMD / BLAS 更规整的内存布局，减少未对齐访问带来的惩罚。' },
-      { title: 'Kaiming 初始化是训练稳定性的第一道保险', text: '它让 ReLU 网络在一开始既不全爆炸，也不全塌成 0。' },
-      { title: '内存回收是训练正确性的一部分', text: '如果中间 Tensor 不释放，这个 loop 不是“慢一点”，而是会在长跑时稳定泄漏。对 C 来说，这属于逻辑正确性，而不只是风格问题。' },
+      { title: '内存摆整齐一点更快', text: '数据对齐后，底层库读起来更顺，矩阵乘法也更容易跑快。' },
+      { title: '一开始怎么随机很重要', text: '权重如果初始得太大或太小，后面训练都可能不顺。' },
+      { title: '中间结果不能一直留着', text: '像 `h1`、`r1` 这些只在这一轮有用，用完就要释放。' },
     ],
   },
 ]
@@ -317,16 +317,16 @@ function goToSection(sectionId) {
   <div class="learn-view">
     <header class="page-header">
       <h1>C 代码原理</h1>
-      <p class="page-desc">把 `tensor.h` 和 `train.c` 拆开看，理解这个纯 C 训练框架到底是怎么工作的。</p>
+      <p class="page-desc">直接对着 `tensor.h` 和 `train.c` 看，这个纯 C 项目是怎么把模型训出来的。</p>
     </header>
 
     <section class="hero-panel">
       <div class="hero-copy">
-        <div class="section-kicker">从代码看原理</div>
-        <h2>不是“讲概念后贴代码”，而是让概念直接长在真实实现上</h2>
+        <div class="section-kicker">先看代码</div>
+        <h2>代码写了什么，这里就讲什么</h2>
         <p>
-          这页聚焦 6 个核心主题：数据结构、前向算子、自动微分、训练循环，以及背后的性能与内存约束。
-          目标不是把所有 C 语法解释一遍，而是帮你建立“这几百行代码为什么能训练一个模型”的整体理解。
+          这页把训练过程拆成 6 小块。左边先用图把这一小块说清楚，右边再看真实代码，
+          这样不用先背一堆词，也能知道每一段到底在干什么。
         </p>
       </div>
 
@@ -344,8 +344,8 @@ function goToSection(sectionId) {
           <span class="metric-label">训练步数</span>
         </div>
         <div class="metric-card">
-          <span class="metric-value">header-only</span>
-          <span class="metric-label">`tensor.h` 风格</span>
+          <span class="metric-value">单头文件</span>
+          <span class="metric-label">`tensor.h` 写法</span>
         </div>
       </div>
     </section>
@@ -376,7 +376,7 @@ function goToSection(sectionId) {
               <div class="file-lane">
                 <div class="file-box">
                   <span class="file-name">tensor.h</span>
-                  <span class="file-role">张量、算子、autograd</span>
+                  <span class="file-role">张量、算子、反向传播</span>
                 </div>
                 <div class="file-arrow">→</div>
                 <div class="file-box accent">
@@ -386,13 +386,13 @@ function goToSection(sectionId) {
                 <div class="file-arrow">→</div>
                 <div class="file-box success">
                   <span class="file-name">mnist_mlp.bin</span>
-                  <span class="file-role">网页与 eval 共享模型</span>
+                  <span class="file-role">网页和 eval 都读它</span>
                 </div>
               </div>
               <div class="architecture-notes">
-                <div class="note-chip">训练代码只负责产出权重文件</div>
-                <div class="note-chip">网页推理复用同一份二进制模型</div>
-                <div class="note-chip">核心数学都在 `tensor.h` 里</div>
+                <div class="note-chip">训练代码先把模型文件写出来</div>
+                <div class="note-chip">网页不会重新训练，只会把模型读进来</div>
+                <div class="note-chip">大部分“怎么算”都写在 `tensor.h` 里</div>
               </div>
             </div>
 
@@ -440,7 +440,7 @@ function goToSection(sectionId) {
                   {{ node }}
                 </div>
               </div>
-              <div class="autograd-note">调度器只负责“往前驱递归”，局部梯度公式由每个 `*_backward` 自己实现。</div>
+              <div class="autograd-note">`backward()` 主要负责继续往前走，真正怎么算梯度，要看每个 `*_backward` 里的代码。</div>
             </div>
 
             <div v-else-if="currentSectionData.id === 'training'" class="viz-training">
@@ -522,27 +522,27 @@ function goToSection(sectionId) {
 
     <section class="project-structure">
       <div class="section-kicker">文件地图</div>
-      <h2>仓库里最值得先读的四个文件</h2>
+      <h2>第一次看仓库，先读这四个文件</h2>
       <div class="file-tree">
         <div class="file-item">
           <span class="file-icon">📄</span>
           <span class="file-name">tensor.h</span>
-          <span class="file-desc">张量结构、前向算子、backward 分发器、内存分配都在这里。</span>
+          <span class="file-desc">张量长什么样、前向怎么算、反向怎么传，基本都在这里。</span>
         </div>
         <div class="file-item">
           <span class="file-icon">📄</span>
           <span class="file-name">train.c</span>
-          <span class="file-desc">CSV 读取、batch 采样、训练 loop、模型保存和耗时统计。</span>
+          <span class="file-desc">读数据、取 batch、训练、保存模型，这个文件从头串到尾。</span>
         </div>
         <div class="file-item">
           <span class="file-icon">📄</span>
           <span class="file-name">eval.c</span>
-          <span class="file-desc">加载模型后跑测试集，验证训练结果到底有没有学会。</span>
+          <span class="file-desc">把模型读回来，再跑测试集看看它到底学得怎么样。</span>
         </div>
         <div class="file-item">
           <span class="file-icon">📄</span>
           <span class="file-name">Makefile</span>
-          <span class="file-desc">决定是走 Accelerate 还是 OpenMP，也是理解平台优化策略的入口。</span>
+          <span class="file-desc">这里能看到编译时走哪套加速方式，比如 Accelerate 或 OpenMP。</span>
         </div>
       </div>
     </section>
