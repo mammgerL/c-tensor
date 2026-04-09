@@ -293,6 +293,8 @@ const weights = [
   },
 ]
 
+const repoUrl = 'https://github.com/mammgerL/c-tensor'
+
 function navigate(path) {
   router.push(path)
 }
@@ -317,6 +319,14 @@ function navigate(path) {
           <button class="btn-secondary btn-lg" @click="navigate('/learn')">
             ⚙️ 查看 C 代码原理
           </button>
+          <a
+            class="btn-secondary btn-lg hero-link"
+            :href="repoUrl"
+            target="_blank"
+            rel="noreferrer"
+          >
+            ↗ GitHub 仓库
+          </a>
         </div>
       </div>
     </section>
@@ -786,11 +796,19 @@ function navigate(path) {
 .hero-actions {
   display: flex;
   gap: 16px;
+  flex-wrap: wrap;
 }
 
 .btn-lg {
   padding: 14px 28px;
   font-size: 16px;
+}
+
+.hero-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
 }
 
 .section-title {
