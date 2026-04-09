@@ -26,29 +26,38 @@ function navigate(path) {
     <div class="nav-brand" @click="navigate('/')">
       <span class="nav-title">C-Tensor</span>
     </div>
-    <div class="nav-main">
-      <div class="nav-links">
-        <button
-          v-for="item in navItems"
-          :key="item.path"
-          :class="['nav-link', { active: isActive(item.path) }]"
-          @click="navigate(item.path)"
-        >
-          {{ item.label }}
-        </button>
-      </div>
-      <a
-        class="repo-link"
-        :href="repoUrl"
-        target="_blank"
-        rel="noreferrer"
-        aria-label="GitHub 仓库"
+    <div class="nav-links">
+      <button
+        v-for="item in navItems"
+        :key="item.path"
+        :class="['nav-link', { active: isActive(item.path) }]"
+        @click="navigate(item.path)"
       >
-        <span class="repo-mark">GitHub</span>
-        <span class="repo-name">mammgerL/c-tensor</span>
-      </a>
+        {{ item.label }}
+      </button>
     </div>
   </nav>
+
+  <a
+    class="repo-link"
+    :href="repoUrl"
+    target="_blank"
+    rel="noreferrer"
+    aria-label="GitHub 仓库"
+  >
+    <svg class="repo-icon" viewBox="0 0 16 16" aria-hidden="true">
+      <path
+        fill="currentColor"
+        d="M8 0C3.58 0 0 3.58 0 8a8 8 0 0 0 5.47 7.59c.4.07.55-.17.55-.38
+        0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52
+        0-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95
+        0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82A7.6 7.6 0 0 1 8 4.84c.68 0 1.36.09 2 .27
+        1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48
+        0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8 8 0 0 0 16 8c0-4.42-3.58-8-8-8Z"
+      />
+    </svg>
+    <span>GitHub</span>
+  </a>
 </template>
 
 <style scoped>
@@ -56,7 +65,7 @@ function navigate(path) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 20px;
+  gap: 16px;
   padding: 16px 32px;
   background: var(--color-card);
   box-shadow: var(--shadow-sm);
@@ -80,14 +89,6 @@ function navigate(path) {
   -webkit-text-fill-color: transparent;
   background-clip: text;
   font-family: 'SF Mono', 'Fira Code', monospace;
-}
-
-.nav-main {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 14px;
-  min-width: 0;
 }
 
 .nav-links {
@@ -117,47 +118,41 @@ function navigate(path) {
 }
 
 .repo-link {
-  display: inline-flex;
+  position: fixed;
+  top: 14px;
+  right: 16px;
+  display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
+  gap: 8px;
+  padding: 10px 15px;
   border-radius: 999px;
-  border: 1px solid rgba(45, 52, 54, 0.14);
-  background: rgba(255, 255, 255, 0.92);
-  color: var(--color-text);
+  background: #24292e;
+  color: white;
   text-decoration: none;
   white-space: nowrap;
-  transition: var(--transition);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+  z-index: 220;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
 .repo-link:hover {
-  border-color: rgba(45, 52, 54, 0.28);
-  box-shadow: 0 4px 12px rgba(45, 52, 54, 0.08);
-  transform: translateY(-1px);
+  transform: scale(1.05);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.24);
 }
 
-.repo-mark {
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--color-text-light);
-}
-
-.repo-name {
+.repo-link span {
   font-size: 14px;
   font-weight: 700;
-  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+.repo-icon {
+  width: 18px;
+  height: 18px;
 }
 
 @media (max-width: 1100px) {
   .navbar {
-    align-items: flex-start;
-  }
-
-  .nav-main {
-    flex-direction: column;
-    align-items: flex-end;
+    padding-right: 140px;
   }
 }
 
@@ -172,16 +167,14 @@ function navigate(path) {
     justify-content: center;
   }
 
-  .nav-main {
-    align-items: stretch;
-  }
-
   .nav-links {
     justify-content: center;
   }
 
   .repo-link {
-    align-self: center;
+    top: 10px;
+    right: 12px;
+    padding: 9px 13px;
   }
 }
 </style>
